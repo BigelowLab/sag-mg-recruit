@@ -150,7 +150,7 @@ def read_size_filter(fastx, readsize, outfile, cores=1):
         readsize (int): minimum read size to keep
         outfile (str): location of outfile
     outputs:
-        new fastq file with filtered reads
+        new fastq/fasta file with filtered reads
 
     '''
     if not outfile.endswith('.gz'):
@@ -169,7 +169,10 @@ def read_size_filter(fastx, readsize, outfile, cores=1):
             totalreads += 1
             if len(s) >= readsize:
                 passedreads += 1
-                print("@"+n, s, "+",q, sep="\n", file=oh)
+                if "fastq" in outfile:
+                    print("@"+n, s, "+",q, sep="\n", file=oh)
+                else:
+                    print(">"+n, s, sep="\n", file=oh)
     print("{passedreads} out of {totalreads} passed the length filter.".format(**locals()))
     outfile = pigz_file(out, cores)
     return outfile
@@ -216,7 +219,7 @@ def bbmap_stderr_info1(stderr, name):
     ser = Series([indict.get(i, "NA") for i in desired_info], index = desired_info, name=name)
     return ser
 
-def bb_cov(ref, reads1, reads2=None, aln_id=0.95, threads=20, mem="20g", statsfile = True, outdir="", out_prefix=None):
+def bb_cov(ref, reads1, reads2=None, max_len=700, aln_id=0.95, threads=20, mem="20g", statsfile = True, outdir="", out_prefix=None):
     '''Run bbmap of designaged reads against reference fasta
     
     Args:
@@ -246,7 +249,7 @@ def bb_cov(ref, reads1, reads2=None, aln_id=0.95, threads=20, mem="20g", statsfi
         
         oh = os.path.join(outdir, "{out_prefix}.covstats".format(**locals()))
         with file_transaction(oh) as tx:
-            cmd = "bbmap.sh in={reads1} {reads2cmd} minid={aln_id} covstats={tx} ref={ref} threads={threads} -Xmx{mem}".format(**locals())
+            cmd = "bbmap.sh in={reads1} {reads2cmd} maxlen={max_len} minid={aln_id} covstats={tx} ref={ref} threads={threads} -Xmx{mem}".format(**locals())
             print(cmd)
             sterr = get_stderr(cmd)
         return sterr, oh
@@ -338,6 +341,7 @@ def recruit_multiref(reads1, refdir, reads2, aln_id, threads, mem, outdir):
 @cli.command('jrmr', short_help='join reads then recruit to multiple references')
 @click.option('--join', is_flag=True, help='if designated, join reads before recruitment')
 @click.option('--len_filter', default=None, type=click.INT, help='minimum read length to keep for read recruitment')
+@click.option('--max_len', default=600)
 @click.option('--prefix', default=None, help='prefix to designate input metagenome, defaults to "mg"')
 @click.option('--fq1', default=None, help='input reads in fastq form')
 @click.option('--refdir', default=None, help='directory containing SAG genomes in *.fasta format')
@@ -349,7 +353,7 @@ def recruit_multiref(reads1, refdir, reads2, aln_id, threads, mem, outdir):
 @click.option('--aln_id', type=click.FLOAT, default=0.95, help='minimum read alignment identity')
 @click.option('--mem', default='20g', help='amount of memory to use, must be in format <number><units>, e.g. "20g"')
 @click.option('--outdir', default="", help='output directory')
-def join_multirecruit(prefix, refdir, fq1, fq2, join, len_filter, mmd, mino, maxo, threads, outdir, aln_id, mem):
+def join_multirecruit(prefix, refdir, fq1, fq2, join, len_filter, max_len, mmd, mino, maxo, threads, outdir, aln_id, mem):
     if op.exists(outdir) == False:
         os.mkdir(outdir)
     
@@ -361,7 +365,7 @@ def join_multirecruit(prefix, refdir, fq1, fq2, join, len_filter, mmd, mino, max
     if refdir is None:
         raise IOError("Please designate directory containing SAG reference fasta sequences")
 
-    if len(glob.glob(os.path.join(refdir, "*.fasta"))) = = 0:
+    if len(glob.glob(os.path.join(refdir, "*.fasta"))) == 0:
         raise IOErrorq("Reference directory contains no reference sequences.")
 
     if prefix is None:
@@ -374,6 +378,8 @@ def join_multirecruit(prefix, refdir, fq1, fq2, join, len_filter, mmd, mino, max
         outpath = os.path.join(outdir, prefix)
         if os.path.exists(outpath+".extendedFrags.fastq.gz"):
             reads = outpath+".extendedFrags.fastq.gz"
+            reads1 = reads
+            reads2 = None
         else:
             outfiles = run_flash(outpath, fq1, fastq2=fq2, mismatch_density=mmd, min_overlap=mino,
                 max_overlap=maxo, cores=threads)
@@ -382,6 +388,7 @@ def join_multirecruit(prefix, refdir, fq1, fq2, join, len_filter, mmd, mino, max
             print(compare_read_counts(joined, reads))
             
             reads1 = outfiles[0]
+            reads2 = None
          
     else:
         reads1 = fq1
@@ -389,10 +396,15 @@ def join_multirecruit(prefix, refdir, fq1, fq2, join, len_filter, mmd, mino, max
 
     # length filter reads if a number designated
     if len_filter is not None:
-        if fq2 is not None:
+        if reads2 is not None:
             raise IOError("length filter not possible with forward and reverse reads")
-        out_name = os.path.join(os.path.abspath(outdir), os.path.basename(reads1).replace(".fastq", "_gt{len_filter}.fastq".format(**locals())))
-        reads1 = read_size_filter(reads1, len_filter, out_name, cores=threads)
+        
+        out_name = os.path.join(os.path.abspath(outdir), os.path.basename(reads1).replace(".fa", "_gt{len_filter}.fa".format(**locals())))
+        
+        if op.exists(out_name):
+            reads1=out_name
+        else:
+            reads1 = read_size_filter(reads1, len_filter, out_name, cores=threads)
 
     #prep for bbcov:
     readsname = "_".join(os.path.basename(reads1).split(".")[:-1])
@@ -408,7 +420,7 @@ def join_multirecruit(prefix, refdir, fq1, fq2, join, len_filter, mmd, mino, max
 
     for ref in reflist:
         sterr, cov_file = bb_cov(ref=ref, reads1=reads1, reads2=reads2, aln_id=aln_id, threads=threads, mem=mem, 
-        statsfile=True, outdir=outdir, out_prefix=None)
+        statsfile=True, outdir=outdir, out_prefix=None, max_len=max_len)
         with open(os.path.join(outdir, "rawstderr.txt"),"a") as oh:
             print(sterr, file=oh)
         refname = os.path.basename(ref).split(".")[0]
