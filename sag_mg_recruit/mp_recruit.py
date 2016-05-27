@@ -366,7 +366,7 @@ def join_multirecruit(prefix, refdir, fq1, fq2, join, len_filter, max_len, mmd, 
         raise IOError("Please designate directory containing SAG reference fasta sequences")
 
     if len(glob.glob(os.path.join(refdir, "*.fasta"))) == 0:
-        raise IOErrorq("Reference directory contains no reference sequences.")
+        raise IOError("Reference directory contains no reference sequences.")
 
     if prefix is None:
         prefix = ".".join(os.path.basename(fq1).split(".")[:-1])
