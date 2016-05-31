@@ -18,6 +18,10 @@ import matplotlib.pyplot as plt
 from scgc.utils import *
 from scgc.fastx import readfx
 
+'''
+read recruitment of metagenomes to sags using bbmap
+'''
+
 
 @click.group(context_settings=dict(help_option_names=['-h', '--help']))
 @click.version_option('0.4.5')
