@@ -2,10 +2,24 @@ from __future__ import print_function
 from __future__ import division
 
 import numpy as np
+import math
 from scgc.utils import file_transaction, multiprocess, pigz_file, file_exists
 from scgc.fastx import readfx
 import pandas as pd
 import multiprocessing
+import logging
+import click
+import numpy as np
+
+
+logger = logging.getLogger(__name__)
+
+@click.group(context_settings=dict(help_option_names=['-h', '--help']))
+@click.version_option('0.4.5')
+@click.pass_context
+def cli(obj):
+    """read recruitment."""
+    pass
 
 
 class OnlineVariance(object):
@@ -50,15 +64,27 @@ def read_fq_string(fq_list):
 
 
 def chop_read((name, seq, qual), length, minimum):
-    pieces = round(len(seq)/length)
-    div = int(round(len(seq)/pieces))
+    #pieces = round(len(seq)/length)
+    #div = int(round(len(seq)/pieces))
+    #div = int(math.floor(len(seq)/length))
+    div = int(round(np.random.normal(loc=length, scale=10)))
+    #div = length
     newrecords= ""
+    #for i, n in enumerate(range(0, len(seq), div)):
     for i, n in enumerate(range(0, len(seq), div)):
         newname = "%s_%s" % (name, i+1)
         newseq = seq[n:n+div]
         newqual = qual[n:n+div]
+        
+        #if abs(len(seq[n:len(seq)])-length) <= 30:
+        #    newseq = seq[n:len(seq)]
+        #    newqual = qual[n:len(seq)]
+        #    newrecords +=  "@%s\n%s\n+\n%s\n" % (newname, newseq, newqual)
+        #    break
+
         if len(newseq) > minimum:
             newrecords += "@%s\n%s\n+\n%s\n" % (newname, newseq, newqual)
+
     return str(newrecords)
 
 
@@ -81,7 +107,7 @@ def chop_reads(fastq, out_file, length, minlength, cores=10):
     
     with file_transaction(out_file) as tx_outfile:
         with open(tx_outfile, "w") as txoh:
-            for result in multiprocess(chop_read, readfx(fastq), 230, 150, pool=p):
+            for result in multiprocess(chop_read, readfx(fastq), length, minlength, pool=p):
     
                 if type(result) == list:
                     for r in result:
@@ -113,3 +139,15 @@ def chop_reads(fastq, out_file, length, minlength, cores=10):
     
     return out_file
 
+@cli.command('chop', short_help='cut reads into smaller reads using ')
+@click.option('--length', type=click.INT, help='target length')
+@click.option('--fastq', help='fastq to subsample')
+@click.option('--minlength', type=click.INT, help="minimum length necessary")
+@click.option('--outfile', help="name of output file")
+@click.option('--cores', default=10, help="number of cores to use")
+def run_chop_reads(length, fastq, minlength, outfile, cores):
+    out = chop_reads(fastq, outfile, length, minlength, cores)
+    return out
+
+if __name__ == '__main__':
+    cli()
