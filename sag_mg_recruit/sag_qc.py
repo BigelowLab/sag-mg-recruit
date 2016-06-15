@@ -8,14 +8,13 @@ import shutil
 import click
 from itertools import groupby
 import gzip
-# import subprocess
-# from sarge import get_stderr
+from Bio import SeqIO
 
 
 logger = logging.getLogger(__name__)
 
 '''
-sag qc information for read recruitment
+sag transformations and qc information for read recruitment
 '''
 
 @click.group(context_settings=dict(help_option_names=['-h', '--help']))
@@ -127,7 +126,7 @@ def checkm_completeness(sagfile, outfile, cores=10):
         print("sag %s is %s bp in length" % (s, length))
 
         completeness['total_bp'] = length
-        completeness['calculated_length'] = completeness.total_bp * 100/completeness.Completeness
+        completeness['calculated_length'] = int(completeness.total_bp * 100/completeness.Completeness)
         
         df = pd.concat([df, completeness])
     
@@ -157,6 +156,64 @@ def count_fasta_bp(sagfasta):
     return total_length
 
 
+def mask_sag(input_gb, out_fasta):
+    '''output masked contigs with rRNA changed to 'N's
+    Args:
+        input_gb (str): path to annotated input genbank formatted genome
+        out_fasta (str): where to write the output fasta to
+    Returns:
+        fasta file with rRNA regions masked with 'N's
+        out_fasta (str)
+    '''
+     if input_gb.endswith(".gb") == False or input_gb.endswith(".gbk") == False:
+        logger.error("input file does not appear to be in genbank format.  Please check.")
+        return None
+
+    with open(input_gb, "rU") as input_handle, open(out_fasta, "w") as oh:
+        rrna_count = 0
+        for r in SeqIO.parse(input_handle, "genbank"):
+            print(">", r.name, sep="", file=oh)
+            s = r.seq
+            cloc = []
+            masked = ""
+            for f in r.features:
+                if f.type == "rRNA":
+                    #if "16S" in str(f.qualifiers['gene']).upper() or "23S" in str(f.qualifiers['gene']).upper():
+                    #    print(f)
+                    cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
+                    logger.info('rRNA gene found on contig %s' % r.name)
+                    rrna_count += 1
+
+            # if the contig contains one rRNA gene (most common if rRNA present)
+            if len(cloc) == 1:
+                masked += s[0:cloc[0].start-1]
+                masked += 'N'*(cloc[0].end - cloc[0].start)
+                masked += s[cloc[0].end-1:]
+            # probably won't be instances where below is true
+            elif len(cloc) > 1:
+                for i in range(0, len(cloc)):
+                    # if it's the first entry
+                    if i == 0:
+                        masked += s[0:cloc[i].start-1]
+                        masked += 'N'*(cloc[i].end - cloc[i].start)
+                    # if it's the last entry
+                    elif i == len(cloc)-1:
+                        masked += s[cloc[i-1].end-1:cloc[i].start-1]
+                        masked += 'N'*(cloc[i].end - cloc[i].start)
+                        masked += s[cloc[i].end:]
+                    else:
+                        masked += s[cloc[i-1].end-1:cloc[i].start-1]
+                        masked += 'N'*(cloc[i].end - cloc[i].start)
+            # if no rRNA on contig, just return the sequence, unmasked
+            else:
+                masked = s
+
+            for i in range(0, len(masked), 80):
+                print(masked[i:i+80], file=oh)
+    logger.info('%s rRNA genes found in %s' % (rrna_count, op.basename(input_gb))
+    return out_fasta
+
+
 @cli.command('completeness', short_help='create dataframe of completeness values for list of sags')
 @click.option('--sagfile', help='path to list of SAG files to run through checkm')
 @click.option('--outfile', default=None, help='name and path to output csv')
@@ -176,6 +233,17 @@ def completeness(sagfile, outfile, cores):
     outfile = op.abspath(outfile)
     
     out = checkm_completeness(sagfile, outfile, cores)
+    return out
+
+
+@cli.command('mask', short_help='mask rRNA genes in sag genome')
+@click.option('--input_gb', help='path to input annotated genbank file')
+@click.option('--out_fasta', default=None, help='where to write masked output fasta file to')
+def run_mask_sag(input_gb, out_fasta):
+    if out_fasta == None:
+        out_fasta = op.basename(input_gb).split(".")[0]+"_masked.fasta"
+        print("output fasta file will be: %s" % out_fasta)
+    out = mask_sag(input_gb, out_fasta)    
     return out
 
 

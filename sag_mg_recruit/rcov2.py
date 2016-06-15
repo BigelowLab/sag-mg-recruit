@@ -139,7 +139,7 @@ def filter_bam(bam, outbam, pctid = 95):
                 continue
 
             total += 1
-            md = str(l).split("\t")[-1].split(",")[3].replace(")","").replace("'","").strip()  #get md value from raw bam entry
+            md = str(l).split("\t")[-1].split(",")[3].replace(")","").replace("'","").strip()  # get md value from raw bam entry
             match = _match_len(md)
             pct_match = (match)/l.rlen * 100
 
@@ -345,14 +345,7 @@ def append_real_cov(fastq, reference, outfasta, cleanup, cores, pe):
     print("done.")
     
 
-@cli.command("print_cov", short_help='output bedtools coverage table')
-@click.option('--fastq', help="input fastq file")
-@click.option('--reference', help='reference contigs')
-@click.option('--outdir', default="", help='output directory')
-@click.option('--pe', is_flag=True, help='enter if fastq consists of interleaved reads')
-@click.option('--pctid', default=95, help="minimum percent identity to keep")
-@click.option('--cores', default=8, help='number of cores for bwa to use')
-@click.option('--cleanup', default=False, help='boolean to designate if extra files created during run should be deleted') 
+
 def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
     fqpre = "_".join(op.basename(fastq).split(".")[:-1])
     ref_pre = "_".join(op.basename(reference).split(".")[:-1])
@@ -372,44 +365,19 @@ def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
         idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
         for f in idx_files+[bam, bam+".bai"]:
             os.remove(f)
-
-'''
-removesuffix = lambda i: "_".join(op.basename(i).split(".")[:-2]) if i.endswith(".fastq.gz") else "_".join(op.basename(i).split(".")[:-1])
-gzopen=lambda i: gzip.open(i) if i.endswith(".gz") else open(i)
-
-def get_libe_size_hist(fastx):
-    readsizes = defaultdict(lambda: 0)
-    readcount = 0
-    with gzopen(fastq) as handle:
-        for i, record in enumerate(SeqIO.parse(handle, "fastq")):
-            readsizes[len(record.seq)] += 1
-            readcount += 1
-    return hist, readcount
-
-def plot_read_size(hist, name, outfile):
-    hist = pd.DataFrame.from_dict(readsizes, orient='index')
-    hist['length']=hist.index
-    hist['read_count']=hist[0]
-    fig = plt.plot(hist['length'], hist['read_count'], color='b')
-    plt.ylabel('# reads')
-    plt.xlabel('read length')
-    name = "_".join(op.basename(fastq).split(".")[:-1])+".png"
-    plt.title('%s: %s total reads' % (name, readcount))
-    plt.savefig(outfile)
-    return plt
+    return bed
 
 
-def stats_multi_ref(fastq, reference_folder, outdir, pctid, cores, cleanup, pe):
-    mg_stat_dir = op.join(outdir, "mgstats")
-    mg_stat_dir = safe_makedir(mg_stat_dir)
-    fq_name = removesuffix(fastq)
-    hist, readcount = get_libe_size_hist(fastq)
-    histout = op.join(mgstat_dir, fq_name+".hist")
-
-'''
-
-
-
+@cli.command("print_cov", short_help='output bedtools coverage table')
+@click.option('--fastq', help="input fastq file")
+@click.option('--reference', help='reference contigs')
+@click.option('--outdir', default="", help='output directory')
+@click.option('--pe', is_flag=True, help='enter if fastq consists of interleaved reads')
+@click.option('--pctid', default=95, help="minimum percent identity to keep")
+@click.option('--cores', default=8, help='number of cores for bwa to use')
+@click.option('--cleanup', default=False, help='boolean to designate if extra files created during run should be deleted') 
+def run_print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
+	print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe)
 
 
 

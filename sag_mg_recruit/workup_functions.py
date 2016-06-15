@@ -79,3 +79,9 @@ def genome_cov_table(gcov_list):
         new=get_recruit_info(g)
         big = pd.concat([big, new])
     return big
+
+
+
+    
+
+
