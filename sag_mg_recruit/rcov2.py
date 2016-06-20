@@ -112,13 +112,19 @@ def index_bam(bam_file):
 
 
 def _match_len(md):
+    '''Calculate length of perfect alignment from md value
+
+    Args:
+        md (str): md string
+    Returns:
+        length (int): number of bp that were exact matches within alignment
+    '''
     length=0
-    mismatch=0
     number=""
     for i, c in enumerate(md):
         try:
             val = int(c)
-            number = number+c
+            number = number + c
         except:
             if len(number) > 0:
                 length += int(number)
@@ -129,6 +135,17 @@ def _match_len(md):
 
 
 def filter_bam(bam, outbam, pctid = 95):
+    '''Use sam "md" string to calculate pctid, filter aligned reads less than designated pctid
+    
+    Args:
+        bam (str): path to bam file
+        outbam (str): path to output bam file
+        pctid (numeric between 0 and 100): percent identity desired for filtering
+    Returns:
+        tuple: path to (outbam, outfile)
+    Outputs: 
+        filtered bam file, output read count text file with format bamname \t # good reads
+    '''
     with pysam.AlignmentFile(bam, "rb") as ih, pysam.AlignmentFile(outbam, "wb", template=ih) as oh:
         good = 0
         total = 0
@@ -147,9 +164,9 @@ def filter_bam(bam, outbam, pctid = 95):
                 good += 1
                 oh.write(l)
         with open(outfile, "w") as oh:
-            print(name, good, file=oh)
+            print(name, good, sep="\t", file=oh)
         print("there were %s good read alignments out of %s total alignments" % (good, total))
-    return outbam
+    return outbam, outfile
 
 
 def _remove_option(options, item, flag=False):
@@ -213,7 +230,7 @@ def bwa_mem(fastq, out_file, reference, options, cores=1):
         options = filter_options(options, predefined_options)
         opts = " ".join(options)
     else:
-    	opts = ""
+        opts = ""
     
     logger.info("Mapping %s to %s using bwa mem" % (fastq, reference))
     
@@ -346,7 +363,7 @@ def append_real_cov(fastq, reference, outfasta, cleanup, cores, pe):
     
 
 
-def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
+def bed_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
     fqpre = "_".join(op.basename(fastq).split(".")[:-1])
     ref_pre = "_".join(op.basename(reference).split(".")[:-1])
     outbam = op.join(os.path.abspath(outdir), fqpre+"_vs_"+ref_pre+".bam")
@@ -356,17 +373,93 @@ def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
     else:
         bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
 
-    bam = filter_bam(bam, bam.replace(".bam", "_{pctid}.bam".format(**locals())), pctid=pctid)
+    bam, goodcount = filter_bam(bam, bam.replace(".bam", "_{pctid}.bam".format(**locals())), pctid=pctid)
 
     bed = get_coverage(bam)                         # create per base coverage table
     print("coverage_table_created, called:", bed)
     
     if cleanup:
-        idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
-        for f in idx_files+[bam, bam+".bai"]:
+        #idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
+        #for f in idx_files+[bam, bam+".bai"]:
+        for f in [bam, bam+".bai"]:
             os.remove(f)
-    return bed
+    return bed, goodcount
 
+
+def bed_cov_it(fqref, outdir, pctid, cores, cleanup, pe):
+    '''This function takes a fastq file and a reference, entered in the first input as a tuple, 
+    1. aligns them using bwa
+    2. filters them based on pctid alignment threshold
+    3. creates a counts file of how many reads passed the filter
+    4. creates a genome coverage table using bedtools
+    5. returns a tuple of the coverage file and the count file
+    Args:
+        fqref: tuple as (path to metagenome fastq, path to reference SAG)
+        outdir (str): output directory
+        pctid (int): percent identity of aligned reads to keep
+        cores (int): # threads to use 
+        cleanup (boolean): if true, delete output bam and bai file after running
+        pe (boolean): if true, reads are paired 
+    Output:
+        bedtools coverage file, alignment count file
+    '''
+    fastq = fqref[0]
+    reference = fqref[1]
+    fqpre = "_".join(op.basename(fastq).split(".")[:-1])
+    ref_pre = "_".join(op.basename(reference).split(".")[:-1])
+    outbam = op.join(os.path.abspath(outdir), fqpre+"_vs_"+ref_pre+".bam")
+    
+    if pe:
+        bam = bwa_mem(fastq, outbam, reference, options='-p', cores=cores)
+    else:
+        bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
+    bam, goodcount = filter_bam(bam, bam.replace(".bam", "_{pctid}.bam".format(**locals())), pctid=pctid)   # filter aligned reads based on pctid
+    bed = get_coverage(bam)                         # create per base coverage table
+    print("coverage_table_created, called:", bed)
+    if cleanup:
+        #idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
+        #for f in idx_files+[bam, bam+".bai"]:
+        for f in [bam, bam+".bai"]:
+            os.remove(f)
+    return bed, goodcount
+
+
+def multiprocess(f, iterable, *args, **kwargs):
+    """
+    Map an iterable to a function. Default key function chunks iterable by
+    3s.
+    parameters
+        f : callable
+        iterable : any iterable where each item is sent to f
+        args : arguments passed to mapped function
+        kwargs : additional arguments for parmap.map
+    returns
+        mapped function result
+    """
+    chunksize = kwargs.pop('chunksize', 3)
+    key = kwargs.pop('key', lambda k, l=itertools.count(): next(l)//chunksize)
+    for k, g in itertools.groupby(iterable, key=key):
+        yield parmap.map(f, g, *args, **kwargs)
+
+
+def all_pairs(mglist, saglist):
+    '''create list of tuples in which each mg is paired with every SAG'''
+    allpairs = []
+    for m in mglist:
+        for s in saglist:
+            allpairs.append((m, s))
+    return allpairs
+   
+    
+def multi_bedcoverage(mglist, saglist, outdir):
+    pairs = all_pairs(mglist, saglist)
+    bedlist = []
+    for i in multiprocess(bed_cov_it, pairs, outdir, 95, 10, cleanup=True, pe=False):
+        for bed, count in i:
+            bedlist.append(bed)
+    return bedlist
+
+    
 
 @cli.command("print_cov", short_help='output bedtools coverage table')
 @click.option('--fastq', help="input fastq file")
@@ -377,7 +470,7 @@ def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
 @click.option('--cores', default=8, help='number of cores for bwa to use')
 @click.option('--cleanup', default=False, help='boolean to designate if extra files created during run should be deleted') 
 def run_print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
-	print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe)
+    bed_cov(fastq, reference, outdir, pctid, cores, cleanup, pe)
 
 
 
