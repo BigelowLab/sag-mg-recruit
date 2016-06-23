@@ -325,7 +325,171 @@ def append_rcov(infasta, outfasta, cov_dict):
                 print(seq[i:i + 80], file= outfile)
 
 
-@cli.command("append_cov", short_help='append real coverage values to contig names')
+def bed_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
+    fqpre = "_".join(op.basename(fastq).split(".")[:-1])
+    ref_pre = "_".join(op.basename(reference).split(".")[:-1])
+    outbam = op.join(os.path.abspath(outdir), fqpre+"_vs_"+ref_pre+".bam")
+    
+    if op.exists(outbam):
+        bam = outbam
+    elif pe:
+        bam = bwa_mem(fastq, outbam, reference, options='-p', cores=cores)
+    else:
+        bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
+    
+    filtered_bam = bam.replace(".bam", "_{pctid}.bam".format(**locals()))
+    countfile = filtered_bam.replace(".bam", ".alncount")
+
+    if op.exists(filtered_bam) and op.exists(countfile):
+        filtered_bam, goodcount = filtered_bam, countfile
+    else:
+        filtered_bam, goodcount = filter_bam(bam, bam.replace(".bam", "_{pctid}.bam".format(**locals())), pctid=pctid)
+
+    bed = get_coverage(filtered_bam)                         # create per base coverage table
+    print("coverage_table_created, called:", bed)
+    
+    if cleanup:
+        #idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
+        #for f in idx_files+[bam, bam+".bai"]:
+        for f in [bam, bam+".bai", filtered_bam]:
+            os.remove(f)
+    return bed, goodcount
+
+
+def all_pairs(mglist, saglist):
+    '''create list of tuples in which each mg is paired with every SAG'''
+    allpairs = []
+    for m in mglist:
+        for s in saglist:
+            allpairs.append((m, s))
+    return allpairs
+
+
+def split_threads_by_runs(threads, runs):
+    '''given the number of threads designated to the program and the number of 
+    runs to be done simultaneously, 
+    return a pool process for threads designated 
+    and the number of cores to use per run
+    '''
+    p = multiprocessing.Pool(processes=threads)
+    cores = threads//runs
+    if cores == 0:
+        raise IOError("number of threads must be greater than or equal to the number of runs")
+    return p, cores
+
+
+def bed_cov_it(fqref, outdir, pctid, cores, cleanup, pe):
+    '''This function takes a fastq file and a reference, entered in the first input as a tuple, 
+    1. aligns them using bwa
+    2. filters them based on pctid alignment threshold
+    3. creates a counts file of how many reads passed the filter
+    4. creates a genome coverage table using bedtools
+    5. returns a tuple of the coverage file and the count file
+    Args:
+        fqref: tuple as (path to metagenome fastq, path to reference SAG)
+        outdir (str): output directory
+        pctid (int): percent identity of aligned reads to keep
+        cores (int): # threads to use 
+        cleanup (boolean): if true, delete output bam and bai file after running
+        pe (boolean): if true, reads are paired 
+    Output:
+        bedtools coverage file, alignment count file
+    '''
+    fastq = fqref[0]
+    reference = fqref[1]
+    fqpre = "_".join(op.basename(fastq).split(".")[:-1])
+    ref_pre = "_".join(op.basename(reference).split(".")[:-1])
+    outbam = op.join(os.path.abspath(outdir), fqpre+"_vs_"+ref_pre+".bam")
+    
+    if pe:
+        bam = bwa_mem(fastq, outbam, reference, options='-p', cores=cores)
+    else:
+        bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
+    bam, goodcount = filter_bam(bam, bam.replace(".bam", "_{pctid}.bam".format(**locals())), pctid=pctid)   # filter aligned reads based on pctid
+    
+    bed = get_coverage(bam)                         # create per base coverage table
+    print("coverage_table_created, called:", bed)
+    if cleanup:
+        #idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
+        #for f in idx_files+[bam, bam+".bai"]:
+        for f in [bam, bam+".bai"]:
+            os.remove(f)
+    return bed
+
+
+def run_bed_cov_mp(fqref_list, outdir, pctid, total_cores, cleanup, pe):
+    '''create bedtools coverage and counts file for each mg, sag pair designated in input list
+
+    Args:
+        fqref_list (list of tuples): list of tuples of (path to metagenome fastq, path to reference SAG)
+        outdir (str): path to directory to place output files
+        pctid (int): percent identity of aligned reads to keep
+        cores (int): # threads to use 
+        cleanup (boolean): if true, delete output bam and bai file after running
+        pe (boolean): if true, reads are paired 
+    Returns:
+        list of output bedtools coverage files
+    Outputs:
+        two files in designated directory:
+        .genomecoverage file (bedtools genome coverage) 
+        .alncount file that reports the number of reads recruited to reference genome 
+    '''
+    p, core_pr = split_threads_by_runs(total_cores, 3)       # set up pool and number of cores per run
+    rbc = partial(bed_cov_it, outdir=outdir, pctid=pctid, 
+                  core_pr=core_pr, cleanup=True)             # set up partial function to be fed into pool.map
+    for i in range(0, len(fqref_list), 3):                   # run three alignments at a time 
+        results += p.map(rbc, fqref[i:i+3])
+    p.close()
+    return results
+
+
+def get_recruit_info(gcov):
+    countfile = gcov.replace("genomecoverage", "aln_count")
+    with open(countfile) as infile:
+        recruit_count = infile.read().split()[1].strip()
+        
+    metagenome = op.basename(gcov).split("_vs_")[0].split("_")[0]
+    coverage = pd.read_csv(gcov, sep="\t", header=None)
+    mean_per_contig = coverage.groupby([0])[2].mean() #.to_dict()
+    sum_per_contig = coverage.groupby([0])[2].sum() #.to_dict()
+    contig_size = coverage.groupby([0])[1].max()+1
+    mean_sag_coverage = mean_per_contig.mean()
+    totalbp = contig_size.sum()
+    uncovered_bp = sum(coverage[2]==0)
+    pct_covered = (totalbp - uncovered_bp)/totalbp * 100
+    total_scaffold = len(sum_per_contig)
+    uncovered_contig = sum(sum_per_contig==0)
+    pct_scaffolds_covered = (total_scaffold - uncovered_contig)/total_scaffold *100
+    sag = "_".join(op.basename(gcov).split("_vs_")[1].strip(".genomecoverage").split("_")[:-1])
+    cols = ['sag',
+            'metagenome',
+            'Percent_scaffolds_with_any_coverage', 
+            'Percent_of_reference_bases_covered', 
+            'Average_coverage', 
+            'total_reads_recruited']
+    data = [sag, metagenome, 
+           pct_scaffolds_covered,
+           pct_covered, 
+           mean_sag_coverage,
+           recruit_count]
+    df = pd.DataFrame(data, index=cols).transpose()
+    return df
+
+
+def genome_cov_table(gcov_list):
+    cols = ['sag',
+            'metagenome',
+            'Percent_scaffolds_with_any_coverage', 
+            'Percent_of_reference_bases_covered', 
+            'Average_coverage', 
+            'total_reads_recruited']
+    big = pd.DataFrame(columns=cols)
+    for g in gcov_list:
+        new=get_recruit_info(g)
+        big = pd.concat([big, new])
+    return big
+    
+@cli.command("append-coverage", short_help='append real coverage values to contig names')
 @click.option('--fastq', help='input fastq file')
 @click.option('--reference', help='reference contigs')
 @click.option('--outfasta', help='name of output fasta file')
@@ -360,108 +524,9 @@ def append_real_cov(fastq, reference, outfasta, cleanup, cores, pe):
         for f in idx_files+[bam, bam+".bai"]:
             os.remove(f)
     print("done.")
-    
 
 
-def bed_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
-    fqpre = "_".join(op.basename(fastq).split(".")[:-1])
-    ref_pre = "_".join(op.basename(reference).split(".")[:-1])
-    outbam = op.join(os.path.abspath(outdir), fqpre+"_vs_"+ref_pre+".bam")
-    
-    if pe:
-        bam = bwa_mem(fastq, outbam, reference, options='-p', cores=cores)
-    else:
-        bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
-
-    bam, goodcount = filter_bam(bam, bam.replace(".bam", "_{pctid}.bam".format(**locals())), pctid=pctid)
-
-    bed = get_coverage(bam)                         # create per base coverage table
-    print("coverage_table_created, called:", bed)
-    
-    if cleanup:
-        #idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
-        #for f in idx_files+[bam, bam+".bai"]:
-        for f in [bam, bam+".bai"]:
-            os.remove(f)
-    return bed, goodcount
-
-
-def bed_cov_it(fqref, outdir, pctid, cores, cleanup, pe):
-    '''This function takes a fastq file and a reference, entered in the first input as a tuple, 
-    1. aligns them using bwa
-    2. filters them based on pctid alignment threshold
-    3. creates a counts file of how many reads passed the filter
-    4. creates a genome coverage table using bedtools
-    5. returns a tuple of the coverage file and the count file
-    Args:
-        fqref: tuple as (path to metagenome fastq, path to reference SAG)
-        outdir (str): output directory
-        pctid (int): percent identity of aligned reads to keep
-        cores (int): # threads to use 
-        cleanup (boolean): if true, delete output bam and bai file after running
-        pe (boolean): if true, reads are paired 
-    Output:
-        bedtools coverage file, alignment count file
-    '''
-    fastq = fqref[0]
-    reference = fqref[1]
-    fqpre = "_".join(op.basename(fastq).split(".")[:-1])
-    ref_pre = "_".join(op.basename(reference).split(".")[:-1])
-    outbam = op.join(os.path.abspath(outdir), fqpre+"_vs_"+ref_pre+".bam")
-    
-    if pe:
-        bam = bwa_mem(fastq, outbam, reference, options='-p', cores=cores)
-    else:
-        bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
-    bam, goodcount = filter_bam(bam, bam.replace(".bam", "_{pctid}.bam".format(**locals())), pctid=pctid)   # filter aligned reads based on pctid
-    bed = get_coverage(bam)                         # create per base coverage table
-    print("coverage_table_created, called:", bed)
-    if cleanup:
-        #idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
-        #for f in idx_files+[bam, bam+".bai"]:
-        for f in [bam, bam+".bai"]:
-            os.remove(f)
-    return bed, goodcount
-
-
-def multiprocess(f, iterable, *args, **kwargs):
-    """
-    Map an iterable to a function. Default key function chunks iterable by
-    3s.
-    parameters
-        f : callable
-        iterable : any iterable where each item is sent to f
-        args : arguments passed to mapped function
-        kwargs : additional arguments for parmap.map
-    returns
-        mapped function result
-    """
-    chunksize = kwargs.pop('chunksize', 3)
-    key = kwargs.pop('key', lambda k, l=itertools.count(): next(l)//chunksize)
-    for k, g in itertools.groupby(iterable, key=key):
-        yield parmap.map(f, g, *args, **kwargs)
-
-
-def all_pairs(mglist, saglist):
-    '''create list of tuples in which each mg is paired with every SAG'''
-    allpairs = []
-    for m in mglist:
-        for s in saglist:
-            allpairs.append((m, s))
-    return allpairs
-   
-    
-def multi_bedcoverage(mglist, saglist, outdir):
-    pairs = all_pairs(mglist, saglist)
-    bedlist = []
-    for i in multiprocess(bed_cov_it, pairs, outdir, 95, 10, cleanup=True, pe=False):
-        for bed, count in i:
-            bedlist.append(bed)
-    return bedlist
-
-    
-
-@cli.command("print_cov", short_help='output bedtools coverage table')
+@cli.command("print-coverage", short_help='output bedtools coverage table')
 @click.option('--fastq', help="input fastq file")
 @click.option('--reference', help='reference contigs')
 @click.option('--outdir', default="", help='output directory')
@@ -472,6 +537,22 @@ def multi_bedcoverage(mglist, saglist, outdir):
 def run_print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
     bed_cov(fastq, reference, outdir, pctid, cores, cleanup, pe)
 
+
+@cli.command('multi-recruit', short_help='run bwa on all designated metagenomes against all designated SAGs')
+@click.option('--fqlist_file', help='path to file containing a list of metagenome files in fastq format')
+@click.option('--saglist_file', help='path to file containing a list of sag file in fasta format')
+@click.option('--outdir', help='output directory')
+@click.option('--pctid', default=95, help='minimum percent identity to keep for read alignment')
+@click.option('--total_cores', default=12, help='total cores to use to run this script')
+def run_multi_recruit(fqlist_file, saglist_file, outdir, pctid, total_cores):
+    mglist = [i for i in open(fqlist_file).read.split("\n") if len(i) > 0]
+    saglist = [i for i in open(saglist_file).read.split("\n") if len(i) > 0]
+    outfile = op.join(outdir, "combined_recruitment_info.tsv")
+    pairs = all_pairs(mglist, saglist)
+    covtbls = run_bed_cov_mp(pairs, outdir, pctid, total_cores, cleanup=True, pe=False)
+    combined = genome_cov_table(covtbls)
+    combined.to_csv(outfile, sep="\t")
+    print("result table written to {outfile}".format(**locals()))
 
 
 if __name__ == '__main__':

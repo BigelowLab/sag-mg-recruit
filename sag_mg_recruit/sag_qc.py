@@ -39,13 +39,7 @@ def sag_checkm_completeness(fasta,  cores):
     fasta = op.abspath(fasta)
     if op.isfile == False or op.exists == False:
         return None
-    #completeness = 0.0
-    #number_unique_markers = 0
-    #number_multi_copy = 0
-    #taxonomy_contained = "NA"
-    #taxonomy_sister_lineage = "NA"
-
-    # we want the fasta in a directory by itself
+    
     with tmp_dir() as tdir:
         bindir = op.join(tdir, "bindir")
         safe_makedir(bindir)
@@ -62,33 +56,17 @@ def sag_checkm_completeness(fasta,  cores):
             print("copying %s to the temporary directory failed, %s" % (fasta, e))
             return None
 
-        # lineage workflow
-        #if not file_exists(op.join(outdir, "completeness.tsv")):
-            # clear any existing output directory and create
-            # shutil.rmtree(outdir, ignore_errors=True)
-            # safe_makedir(outdir)
-            # run lineage workflow
         logger.info("Running lineage workflow on %s" % fasta)
         
         completeness_tsv = op.join(outdir, "completeness.tsv")
         
         cmd = "checkm lineage_wf -f {outfile} --tab_table -q -x fasta -t {cores} {binpath} {outdir}".format(outfile=completeness_tsv, outdir=outdir, cores=cores, binpath=bindir)
-        print(cmd)
         
-        #out = get_stderr(cmd)
-        #print(out)
+        logger.info("running checkm lineage, command is: {cmd}".format(**locals()))
         run(cmd)
-        assert op.exists(completeness_tsv)
-        #try:
-        #    for l in reader(outdir + "/completeness.tsv", header=True, sep="\t"):
-        #        completeness = l['Completeness']
-        #        break
-        #except IOError:
-        #    logger.warning("Lineage workflow failed for %s" % fasta)
-        #    pass
         completeness = pd.read_csv(completeness_tsv, sep="\t", header=0)
     return completeness
-    #return out
+    
 
 
 def checkm_completeness(sagfile, outfile, cores=10):
@@ -114,16 +92,14 @@ def checkm_completeness(sagfile, outfile, cores=10):
         if op.isfile == False:
             logger.error("%s is not a file" % s)
             continue
-        #sagname = "_".join(op.basename(s).split(".")[:-1])
-        #sagpath = s
         completeness = sag_checkm_completeness(s, cores=cores)
         if completeness is None:
             logger.info("completeness stats for %s not determined" % s)
-            print("completeness stats for %s not determined" % s)
+            #print("completeness stats for %s not determined" % s)
             continue
 
         length = count_fasta_bp(s)
-        print("sag %s is %s bp in length" % (s, length))
+        #print("sag %s is %s bp in length" % (s, length))
 
         completeness['total_bp'] = length
         completeness['calculated_length'] = int(completeness.total_bp * 100/completeness.Completeness)
@@ -245,6 +221,7 @@ def run_mask_sag(input_gb, out_fasta):
         print("output fasta file will be: %s" % out_fasta)
     out = mask_sag(input_gb, out_fasta)    
     return out
+
 
 
 if __name__ == '__main__':
