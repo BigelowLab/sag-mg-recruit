@@ -49,6 +49,16 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
 
     outsuffix = [".extendedFrags.fastq.gz", "out.notCombined_1.fastq.gz", ".notCombined_2.fastq.gz", ".hist", ".histogram"]
     outfiles = [prefix+i for i in outsuffix]
+    for o in outfiles:
+        if op.exists(o):
+            exists = True
+        else:
+            exists = False
+            break
+
+    if exists == True:
+        return outfiles
+
     print("FASTQ1 for FLASH is:", fastq1)
     #with file_transaction(outfiles) as tx:
     with file_transaction(outfiles) as tx_outfiles:
@@ -163,7 +173,11 @@ def read_size_filter(fastx, readsize, outfile, cores=1):
         out=outfile.replace('.gz', "")
 
     if os.path.exists(outfile):
-        return outfile
+        passedreads = 0
+        for n, s, q in readfx(outfile):
+            passedreads += 1
+        print("read filter output alreadyfound, {passedreads} are present in the filtered file".format(**locals()))
+        return outfile, passedreads
 
     with open(out, "w") as oh:
         totalreads = 0
