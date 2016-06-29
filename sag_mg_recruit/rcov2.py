@@ -1,7 +1,7 @@
-#!usr/bin/env python
+#!usr/bin/env python3
 from __future__ import print_function
-from __future__ import division
 
+import contextlib
 import subprocess
 import os
 import os.path as op
@@ -10,14 +10,19 @@ import itertools
 import click
 import logging
 import pysam
-from Bio import SeqIO
 import gzip
+import contextlib
 from collections import defaultdict
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import multiprocessing
+import functools
+import tempfile
+import shutil
+from io import TextIOWrapper
+from sarge import capture_stdout, capture_stderr
 
-from scgc.utils import run, file_transaction, safe_makedir
 
 
 '''
@@ -37,6 +42,140 @@ logger = logging.getLogger(__name__)
 def cli(obj):
     """read recruitment."""
     pass
+
+## from scgcpy dev branch for python 3:
+def run(cmd, description=None, iterable=None, retcodes=[0]):
+    """Runs a command using check_call.
+    Args:
+        cmd (str): shell command as a string
+        description (Optional[str]):
+        iterable (Optional[str]):
+    """
+    logging.debug("$> %s" % cmd)
+    if description:
+        logging.info(description)
+    if iterable:
+        return stdout_iter(cmd)
+    else:
+        p = capture_stderr(cmd)
+        if p.returncode not in retcodes:
+            for line in TextIOWrapper(p.stderr):
+                logging.error(line.strip())
+            raise subprocess.CalledProcessError(p.returncode, cmd=cmd)
+        else:
+            return p
+
+
+@contextlib.contextmanager
+def file_transaction(*rollback_files):
+    """
+    Wrap file generation in a transaction, moving to output if finishes.
+    """
+    exts = {".vcf": ".idx", ".bam": ".bai", "vcf.gz": ".tbi", ".fastq.gz": ".count"}
+    safe_names, orig_names = _flatten_plus_safe(rollback_files)
+    # remove any half-finished transactions
+    remove_files(safe_names)
+    try:
+        if len(safe_names) == 1:
+            yield safe_names[0]
+        else:
+            yield tuple(safe_names)
+    # failure -- delete any temporary files
+    except:
+        remove_files(safe_names)
+        remove_tmpdirs(safe_names)
+        raise
+    # worked -- move the temporary files to permanent location
+    else:
+        for safe, orig in zip(safe_names, orig_names):
+            if os.path.exists(safe):
+                shutil.move(safe, orig)
+                for check_ext, check_idx in exts.items():
+                    if safe.endswith(check_ext):
+                        safe_idx = safe + check_idx
+                        if os.path.exists(safe_idx):
+                            shutil.move(safe_idx, orig + check_idx)
+        remove_tmpdirs(safe_names)
+
+
+def remove_tmpdirs(fnames):
+    for x in fnames:
+        xdir = os.path.dirname(os.path.abspath(x))
+        if xdir and os.path.exists(xdir):
+            shutil.rmtree(xdir, ignore_errors=True)
+
+
+def remove_files(fnames):
+    for x in fnames:
+        if x and os.path.exists(x):
+            if os.path.isfile(x):
+                os.remove(x)
+            elif os.path.isdir(x):
+                shutil.rmtree(x, ignore_errors=True)
+
+
+def _flatten_plus_safe(rollback_files):
+    """
+    Flatten names of files and create temporary file names.
+    """
+    tx_files, orig_files = [], []
+    for fnames in rollback_files:
+        if isinstance(fnames, str):
+            fnames = [fnames]
+        for fname in fnames:
+            basedir = safe_makedir(os.path.dirname(fname))
+            tmpdir = safe_makedir(tempfile.mkdtemp(dir=basedir))
+            tx_file = os.path.join(tmpdir, os.path.basename(fname))
+            tx_files.append(tx_file)
+            orig_files.append(fname)
+    return tx_files, orig_files
+
+
+def safe_makedir(dname):
+    """
+    Make a directory if it doesn't exist, handling concurrent race conditions.
+    """
+    if not dname:
+        return dname
+    num_tries = 0
+    max_tries = 5
+    while not os.path.exists(dname):
+        try:
+            os.makedirs(dname)
+        except OSError:
+            if num_tries > max_tries:
+                raise
+            num_tries += 1
+            time.sleep(2)
+    return dname
+
+
+def file_exists(fnames):
+    """
+    Check if a file or files exist and are non-empty.
+    parameters
+        fnames : file path as string or paths as list; if list, all must exist
+    returns
+        boolean
+    """
+    if isinstance(fnames, str):
+        fnames = [fnames]
+    for f in fnames:
+        if not os.path.exists(f) or os.path.getsize(f) == 0:
+            return False
+    return True
+
+
+@contextlib.contextmanager
+def tmp_dir():
+    d = None
+    try:
+        d = tempfile.mkdtemp()
+        yield d
+    finally:
+        if d:
+            shutil.rmtree(d)
+
 
 ##these functions are for bwa's illumina read aligner... not really applicable to the current project
 def _aln(ref, fastq, tmp="/tmp", threads=8, threshold=0.05):
@@ -90,7 +229,9 @@ def bwa_index(reference):
     idx_files = [ref + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
     if not file_exists(idx_files):
         cmd = "bwa index %s" % ref
+        logger.info("creating bwa index for %s" % ref)
         subprocess.check_call(cmd, shell=True)
+
     return reference
 
 
@@ -108,6 +249,7 @@ def index_bam(bam_file):
     if not file_exists(bam_index):
         with file_transaction(bam_index) as tx_out_file:
             run('samtools index %s %s' % (bam_file, tx_out_file))
+            logger.info("indexing bamfile %s" % bam_file)
     return bam_index
 
 
@@ -165,7 +307,7 @@ def filter_bam(bam, outbam, pctid = 95):
                 oh.write(l)
         with open(outfile, "w") as oh:
             print(name, good, sep="\t", file=oh)
-        print("there were %s good read alignments out of %s total alignments" % (good, total))
+        logger.info("there were %s good read alignments out of %s total alignments" % (good, total))
     return outbam, outfile
 
 
@@ -244,28 +386,11 @@ def bwa_mem(fastq, out_file, reference, options, cores=1):
                        index=reference,
                        fastq=fastq,
                        result=tx_out_file)
+        logger.info('running bwa mem: %s' % cmd)
         run(cmd)
         index_bam(tx_out_file)
 
     return out_file
-
-
-def file_exists(fnames):
-    """
-    Check if a file or files exist and are non-empty.
-
-    parameters
-        fnames : file path as string or paths as list; if list, all must exist
-
-    returns
-        boolean
-    """
-    if isinstance(fnames, basestring):
-        fnames = [fnames]
-    for f in fnames:
-        if not os.path.exists(f) or os.path.getsize(f) == 0:
-            return False
-    return True
 
 
 def get_coverage(bam_file, bedout=None):
@@ -282,6 +407,7 @@ def get_coverage(bam_file, bedout=None):
 
     with file_transaction(bedout) as tx_oh:
         cmd = ("bedtools genomecov -dz -ibam {bam_file} > {tx_oh}").format(**locals())
+        logger.info('running bedtools to get genome coverage: {cmd}'.format(cmd=cmd))
         subprocess.check_call(cmd, shell=True)
     return bedout
     
@@ -341,17 +467,20 @@ def bed_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
     countfile = filtered_bam.replace(".bam", ".alncount")
 
     if op.exists(filtered_bam) and op.exists(countfile):
+        logger.warning('filtered bam file and countfile already exist, not re-running.')
         filtered_bam, goodcount = filtered_bam, countfile
     else:
         filtered_bam, goodcount = filter_bam(bam, bam.replace(".bam", "_{pctid}.bam".format(**locals())), pctid=pctid)
 
     bed = get_coverage(filtered_bam)                         # create per base coverage table
-    print("coverage_table_created, called:", bed)
+    logger.info("coverage table created, called: {bed}".format(bed=bed))
     
     if cleanup:
         #idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
         #for f in idx_files+[bam, bam+".bai"]:
         for f in [bam, bam+".bai", filtered_bam]:
+            logger.info('cleaning up extra bam files: {bam}, {bai}' 
+                'and {fbam}'.format(bam=bam, bai=bam+'.bai', fbam=filtered_bam))
             os.remove(f)
     return bed, goodcount
 
@@ -371,14 +500,13 @@ def split_threads_by_runs(threads, runs):
     return a pool process for threads designated 
     and the number of cores to use per run
     '''
-    p = multiprocessing.Pool(processes=threads)
     cores = threads//runs
     if cores == 0:
         raise IOError("number of threads must be greater than or equal to the number of runs")
-    return p, cores
+    return cores
 
 
-def bed_cov_it(fqref, outdir, pctid, cores, cleanup, pe):
+def bed_cov_it(fqref, outdir, pctid, cores, cleanup, pe=False):
     '''This function takes a fastq file and a reference, entered in the first input as a tuple, 
     1. aligns them using bwa
     2. filters them based on pctid alignment threshold
@@ -434,12 +562,27 @@ def run_bed_cov_mp(fqref_list, outdir, pctid, total_cores, cleanup, pe):
         .genomecoverage file (bedtools genome coverage) 
         .alncount file that reports the number of reads recruited to reference genome 
     '''
-    p, core_pr = split_threads_by_runs(total_cores, 3)       # set up pool and number of cores per run
-    rbc = partial(bed_cov_it, outdir=outdir, pctid=pctid, 
-                  core_pr=core_pr, cleanup=True)             # set up partial function to be fed into pool.map
-    for i in range(0, len(fqref_list), 3):                   # run three alignments at a time 
-        results += p.map(rbc, fqref[i:i+3])
-    p.close()
+    
+    core_pr = split_threads_by_runs(total_cores, 3)       # set up pool and number of cores per run
+    #rbc = functools.partial(bed_cov_it, outdir=outdir, pctid=pctid, 
+    #              cores=core_pr, cleanup=True)            # set up partial function to be fed into pool.map
+    #p = multiprocessing.Pool(processes=total_cores)
+    
+    #triplets=[]
+    #for i in range(0, len(fqref_list), 3):
+    #    trip=[]
+    #    for j in fqref_list[i:i+3]:
+    #        trip.append(j)
+    #    triplets.append(trip)
+
+    #results = []
+    #for tri in triplets:                   # run three alignments at a time 
+    #    results += p.map(rbc, tri)
+    #p.close()
+    results=[]
+    for fr in fqref_list:
+        res = bed_cov(fr[0], fr[1], outdir=outdir, pctid=pctid, cores=total_cores, cleanup=True, pe=False)
+        results.append(res)
     return results
 
 
@@ -522,7 +665,8 @@ def append_real_cov(fastq, reference, outfasta, cleanup, cores, pe):
     if cleanup:                                     
         idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
         for f in idx_files+[bam, bam+".bai"]:
-            os.remove(f)
+            if op.exists(f):
+                os.remove(f)
     print("done.")
 
 
@@ -544,9 +688,18 @@ def run_print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
 @click.option('--outdir', help='output directory')
 @click.option('--pctid', default=95, help='minimum percent identity to keep for read alignment')
 @click.option('--total_cores', default=12, help='total cores to use to run this script')
-def run_multi_recruit(fqlist_file, saglist_file, outdir, pctid, total_cores):
-    mglist = [i for i in open(fqlist_file).read.split("\n") if len(i) > 0]
-    saglist = [i for i in open(saglist_file).read.split("\n") if len(i) > 0]
+@click.option('--log', default="multirecruit.log", help='name of logfile for multi-recruit')
+def run_multi_recruit(fqlist_file, saglist_file, outdir, pctid, total_cores, log):
+    if op.exists(outdir)==False:
+        safe_makedir(outdir)
+
+    if log == None:
+        log = op.join(outdir, "mulitrecruit.log")
+        print("logfile is: %s" % log)
+
+    logging.basicConfig(filename=log, level=logging.DEBUG)
+    mglist = [i for i in open(fqlist_file).read().split("\n") if len(i) > 0]
+    saglist = [i for i in open(saglist_file).read().split("\n") if len(i) > 0]
     outfile = op.join(outdir, "combined_recruitment_info.tsv")
     pairs = all_pairs(mglist, saglist)
     covtbls = run_bed_cov_mp(pairs, outdir, pctid, total_cores, cleanup=True, pe=False)
