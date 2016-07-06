@@ -9,7 +9,6 @@ import glob
 import re
 import os.path as op
 import logging
-from sarge import get_stderr
 
 import matplotlib
 matplotlib.use('Agg')
@@ -19,7 +18,7 @@ from scgc.utils import *
 from scgc.fastx import readfx
 
 '''
-join reads using flash
+join reads using flash, filter reads less than length threshold
 '''
 
 
@@ -45,11 +44,21 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
         cores (Optional[int]): threads allocated to flash
 
     Returns:
-        str
+        list of output files in the order: joined reads, not combined fwd reads, not combined rev reads, hist, histogram
     """
 
     outsuffix = [".extendedFrags.fastq.gz", "out.notCombined_1.fastq.gz", ".notCombined_2.fastq.gz", ".hist", ".histogram"]
     outfiles = [prefix+i for i in outsuffix]
+    for o in outfiles:
+        if op.exists(o):
+            exists = True
+        else:
+            exists = False
+            break
+
+    if exists == True:
+        return outfiles
+
     print("FASTQ1 for FLASH is:", fastq1)
     #with file_transaction(outfiles) as tx:
     with file_transaction(outfiles) as tx_outfiles:
@@ -164,7 +173,11 @@ def read_size_filter(fastx, readsize, outfile, cores=1):
         out=outfile.replace('.gz', "")
 
     if os.path.exists(outfile):
-        return outfile
+        passedreads = 0
+        for n, s, q in readfx(outfile):
+            passedreads += 1
+        print("read filter output alreadyfound, {passedreads} are present in the filtered file".format(**locals()))
+        return outfile, passedreads
 
     with open(out, "w") as oh:
         totalreads = 0
@@ -179,7 +192,7 @@ def read_size_filter(fastx, readsize, outfile, cores=1):
                     print(">"+n, s, sep="\n", file=oh)
     print("{passedreads} out of {totalreads} passed the length filter.".format(**locals()))
     outfile = pigz_file(out, cores)
-    return outfile
+    return outfile, passedreads
 
 
 
@@ -199,22 +212,17 @@ def compare_read_counts(joined_pairs, original_count):
     return "there were {original_count} read pairs and {joined_pairs} joined reads".format(**locals())
 
 
-@cli.command('join', short_help='join meteganomic reads')
-@click.argument('prefix')
-@click.argument('outdir')
-@click.argument('fq1', type=click.Path(exists=True))
-@click.option('--fq2', default=None, help='input reverse reads file if reads are not interleaved')
-@click.option('--mmd', type=click.FLOAT, default=0.05, help='mismatch density')
-@click.option('--mino', type=click.INT, default=35, help='minimum overlap')
-@click.option('--maxo', type=click.INT, default=150, help='maximum overlap')
-@click.option('--threads', type=click.INT, default=20, help='number of cores to run')
-@click.option('--outdir', type=click.Path(), default="", help='output directory')
-def join(prefix, fq1, fq2, mmd, mino, maxo, threads, outdir):
+def join(prefix, fq1, fq2=None, mmd=.05, mino=35, maxo=350, threads=20, outdir=""):
     '''Join metagenomic reads using flash
     Args:
         prefix (str): path with prefix included for location of output files
-        fq1 (str): path to input fastq file, if interleaved, that's all you need, if separate forward and reverse include fq1
-        options included in program description
+        fq1 (str): path to input fastq file, if interleaved, that's all you need, if separate forward and reverse include fq2
+        fq2 (str): path to referse read fastq file
+        mmd (float<1): mismatch density for flash
+        mino (int): minimum bp overlap
+        maxo (int): maximum bp overlap
+        threads (int): number of threads
+        outdir (str): output directory path
     Output:
         joined read files, and statistics file of joined read process.
     '''
@@ -227,6 +235,77 @@ def join(prefix, fq1, fq2, mmd, mino, maxo, threads, outdir):
     return outfiles[0]
 
 
+def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
+    '''Join and length filter a list of mg reads based on template from ../data/mg_template.csv
+    
+    Joins reads calling flash
+
+    Args:
+        intable (str): path to location of template file
+        outdir (str): path to output directory
+        mmd (float): mismatch density for flash (join program)
+        mino (int): minimum bp overlap for joined reads
+        maxo (int): maximum bp overlap
+        threads (int): number of threads to run on
+        outdir (str): desired directory for output files
+        minlen (str): minimum read length to keep
+    Returns:
+        directory of result files, output table with number of reads and path to new input files added
+    '''
+    if op.exists(outdir) == False:
+        safe_makedir(outdir)
+    
+    try:
+        df = pd.read_csv(intable)
+    except IOError as e:
+        raise IOError("input table not found")
+
+    df['name'] = [op.basename(i).split(".")[0] for i in df['mg_f']]
+    mglist = list(df.mg_f[df['join']==False])
+    
+    # join reads identified as joined 
+    tojoin = df.loc[df['join']==True]
+    
+    for n, f, r in zip(tojoin['name'], tojoin['mg_f'], tojoin['mg_r']):
+        if pd.isnull(r):  # if reverse read cell is blank, but join=True, reads assumed to be interleaved
+            r=None
+        joinedfq = join(n, f, fq2=r, threads=threads, mmd=mmd, mino=mino, maxo=maxo, outdir=outdir)
+        mglist.append(joinedfq)
+    
+    # size filter all reads:
+    processed_mgs = []
+    read_counts = []
+    nameorder = []
+    for m in mglist:
+        nameorder.append(op.basename(m).split(".")[0])
+        newfilename = op.basename(m).replace(".fastq", ".minlen_%s.fastq" % minlen)
+        outfile = op.join(outdir, newfilename)
+        new_out, count = read_size_filter(m, minlen, outfile, cores=threads)
+        processed_mgs.append(new_out)
+        read_counts.append(count)
+    
+    # create dataframe of results and merge with original info
+    data = {'name':nameorder, 'to_recruit': processed_mgs, 'read_count':read_counts}
+    newinfo = pd.DataFrame(data)
+    res_table = pd.merge(df, newinfo, how='outer', on='name')
+    tbl_name = op.join(outdir, "multi_mg_qc.csv")
+    res_table.to_csv(tbl_name, sep=",")
+    return res_table
+
+
+@cli.command('join', short_help='join meteganomic reads')
+@click.argument('prefix')
+@click.argument('outdir')
+@click.argument('fq1', type=click.Path(exists=True))
+@click.option('--fq2', default=None, help='input reverse reads file if reads are not interleaved')
+@click.option('--mmd', type=click.FLOAT, default=0.05, help='mismatch density')
+@click.option('--mino', type=click.INT, default=35, help='minimum overlap')
+@click.option('--maxo', type=click.INT, default=150, help='maximum overlap')
+@click.option('--threads', type=click.INT, default=20, help='number of cores to run')
+def run_join(prefix, outdir, fq1, fq2, mmd, mino, maxo, threads):
+    join(prefix, fq1, fq2, mmd, mino, maxo, threads, outdir)
+
+
 @cli.command('filt_size', short_help='remove reads below a certain size')
 @click.option('--fastx', help='fasta or fastq file to filter')
 @click.option('--outfile', default=None, help='name of output file with reads that passed the size threshold')
@@ -234,9 +313,22 @@ def join(prefix, fq1, fq2, mmd, mino, maxo, threads, outdir):
 @click.option('--cores', default=1, help='number of cores to use')
 def run_read_size_filt(fastx, outfile, min_size, cores):
     if outfile == None:
-        outfile = ".".join(op.basename(fastx).split(".")[:-1]
+        outfile = ".".join(op.basename(fastx).split(".")[:-1])
     read_size_filter(fastx, readsize, outfile, cores=1)
+
+
+@cli.command('process_table', short_help='process multiple metagenomes based on info supplied in input table')
+@click.option('--table', type=click.Path(exists=True), help='input table, see wiki for format')
+@click.option('--outdir', help='directory location to place output files')
+@click.option('--threads', default=20, type=click.INT, help='number of cores to use')
+@click.option('--mmd', type=click.FLOAT, default=0.05, help='mismatch density')
+@click.option('--mino', type=click.INT, default=35, help='minimum overlap')
+@click.option('--maxo', type=click.INT, default=150, help='maximum overlap')
+@click.option('--minlen', type=click.INT, default=150, help='minimum read length')
+def run_process_multi_mgs(table, outdir, threads, mmd, mino, maxo, minlen):
+    process_multi_mgs(table, outdir, threads, mmd, mino, maxo, minlen)
 
 
 if __name__ == '__main__':
     cli()
+

@@ -1,2 +1,7 @@
 *checkpoint.ipynb
 *.png
+data
+smr_R
+build
+dist
+sag_mg_recruit.egg-info
