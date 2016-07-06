@@ -1,6 +1,7 @@
 '''
-Determine representation of SAGs within metagenomes via read recruitment of metagenomes 
-to SAGs using bwa.
+Determine representation of SAGs within metagenomes 
+
+read recruitment of metagenomes to SAGs using bwa.
 '''
 
 from __future__ import print_function
@@ -8,6 +9,7 @@ from __future__ import division
 
 import subprocess
 import os
+import sys
 import pandas as pd
 from pandas import Series
 from itertools import groupby
@@ -24,14 +26,31 @@ from collections import defaultdict
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from distutils.spawn import find_executable
+
 
 from scgc.utils import *
 from scgc.fastx import readfx
 
 
+__version_info__ = (0, 0, 0)
+__version__ = '.'.join(map(str, __version_info__))
+REQUIRES = ["bedtools", "samtools", "checkm", "bwa", "gzip", "gunzip", "Rscript"]
+
+
 logger = logging.getLogger(__name__)
 wgs_factors = {'illumina':0.8376, 'pyro':1}
 
+
+def check_dependencies(executables):
+    exes = []
+    for exe in executables:
+        if not find_executable(exe):
+            exes.append(exe)
+    if len(exes) > 0:
+        for exe in exes:
+            print("`%s` not found in PATH." % exe)
+        sys.exit(1)
 
 
 def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35,
@@ -179,7 +198,7 @@ def read_size_filter(fastx, readsize, outfile, cores=1):
         passedreads = 0
         for n, s, q in readfx(outfile):
             passedreads += 1
-        print("read filter output alreadyfound, {passedreads} are present in the filtered file".format(**locals()))
+        print("read filter output already found, {passedreads} are present in the filtered file".format(**locals()))
         return outfile, passedreads
 
     with open(out, "w") as oh:
@@ -377,7 +396,7 @@ def checkm_completeness(saglist, outfile, cores):
         completeness['calculated_length'] = int(completeness.total_bp * 100/completeness.Completeness)
         
         df = pd.concat([df, completeness])
-    
+
     df.to_csv(outfile, sep="\t")
     return df
 
@@ -458,7 +477,7 @@ def filter_bam(bam, outbam, pctid = 95):
         good = 0
         total = 0
         name = op.basename(outbam).split(".")[0]
-        outfile = op.join(op.dirname(outbam),"%s.aln_count" % name)
+        outfile = ".".join(outbam.split(".")[:-1])+".aln_count"
         for i, l in enumerate(ih):
             if l.is_duplicate:
                 continue
@@ -581,15 +600,15 @@ def get_coverage(bam_file, bedout=None):
         return bedout
 
     with file_transaction(bedout) as tx_oh:
-        cmd = ("bedtools genomecov -dz -ibam {bam_file} > {tx_oh}").format(**locals())
+        cmd = ("bedtools genomecov -d -ibam {bam_file} > {tx_oh}").format(**locals())
         subprocess.check_call(cmd, shell=True)
     return bedout
 
 ### calculate coverage:
 
 def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
-    fqpre = "_".join(op.basename(fastq).split(".")[:-1])
-    ref_pre = "_".join(op.basename(reference).split(".")[:-1])
+    fqpre = op.basename(fastq).split(".")[0]
+    ref_pre = op.basename(reference).split(".")[0]
     outbam = op.join(os.path.abspath(outdir), fqpre+"_vs_"+ref_pre+".bam")
     
     if pe:
@@ -597,7 +616,7 @@ def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
     else:
         bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
 
-    bam = filter_bam(bam, bam.replace(".bam", "_{pctid}.bam".format(**locals())), pctid=pctid)
+    bam = filter_bam(bam, bam.replace(".bam", ".{pctid}.bam".format(**locals())), pctid=pctid)
 
     bed = get_coverage(bam)                         # create per base coverage table
     print("coverage_table_created, called:", bed)
@@ -605,7 +624,8 @@ def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
     if cleanup:
         idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
         for f in idx_files+[bam, bam+".bai"]:
-            os.remove(f)
+            if op.exists(f):
+                os.remove(f)
     return bed
 
 
@@ -614,26 +634,40 @@ def get_recruit_info(gcov):
     with open(countfile) as infile:
         recruit_count = infile.read().split()[1].strip()
         
-    metagenome = op.basename(gcov).split("_vs_")[0].split("_")[0]
-    coverage = pd.read_csv(gcov, sep="\t", header=None)
-    mean_per_contig = coverage.groupby([0])[2].mean() #.to_dict()
-    sum_per_contig = coverage.groupby([0])[2].sum() #.to_dict()
-    contig_size = coverage.groupby([0])[1].max()+1
-    mean_sag_coverage = mean_per_contig.mean()
-    totalbp = contig_size.sum()
-    uncovered_bp = sum(coverage[2]==0)
-    pct_covered = (totalbp - uncovered_bp)/totalbp * 100
-    total_scaffold = len(sum_per_contig)
-    uncovered_contig = sum(sum_per_contig==0)
-    pct_scaffolds_covered = (total_scaffold - uncovered_contig)/total_scaffold *100
-    sag = op.basename(gcov).split("_vs_")[1].replace(".genomecoverage","").split("_")[0]
+    metagenome = op.basename(gcov).split("_vs_")[0]
+    sag = op.basename(gcov).split("_vs_")[1].split(".")[0]
+    try:
+        coverage = pd.read_csv(gcov, sep="\t", header=None)
+        mean_per_contig = coverage.groupby([0])[2].mean() #.to_dict()
+        sum_per_contig = coverage.groupby([0])[2].sum() #.to_dict()
+        contig_size = coverage.groupby([0])[1].max()+1
+        mean_sag_coverage = mean_per_contig.mean()
+        totalbp = contig_size.sum()
+        uncovered_bp = sum(coverage[2]==0)
+        pct_covered = (totalbp - uncovered_bp)/totalbp * 100
+        total_scaffold = len(sum_per_contig)
+        uncovered_contig = sum(sum_per_contig==0)
+        pct_scaffolds_covered = (total_scaffold - uncovered_contig)/total_scaffold *100
+    except:
+        mean_per_contig = 0
+        sum_per_contig = 0
+        contig_size = 0
+        mean_sag_coverage = 0
+        totalbp = 0
+        uncovered_bp = 0
+        pct_covered = 0
+        total_scaffold = 0
+        uncovered_contig = "NA"
+        pct_scaffolds_covered = "NA" if uncovered_contig == 'NA' else (total_scaffold - uncovered_contig)/total_scaffold *100
+
     cols = ['sag',
             'metagenome',
             'Percent_scaffolds_with_any_coverage', 
             'Percent_of_reference_bases_covered', 
             'Average_coverage', 
             'total_reads_recruited']
-    data = [sag, metagenome, 
+    data = [sag, 
+           metagenome, 
            pct_scaffolds_covered,
            pct_covered, 
            mean_sag_coverage,
@@ -664,7 +698,7 @@ def cov_from_list(fastqlist, referencelist, outdir, pctid, cores, outtable, clea
             bedlist.append(bed)
     table = genome_cov_table(bedlist)
     table.to_csv(outtable, sep="\t")
-    return outtable
+    return table
     print("result table written to {outfile}".format(outfile=outtable))
 
 
@@ -692,14 +726,21 @@ def cov_from_list(fastqlist, referencelist, outdir, pctid, cores, outtable, clea
               default=150, 
               help='for metagenomes: minimum read length')
 # coverage options
-@click.option('--pctid', default=95, help="for alignment: minimum percent identity to keep")
-@click.option('--log', default=None, help='name of log file for this process')
-def main(input_mg_table, input_sag_list, outdir, cores, mmd, mino, maxo, minlen, pctid, log):
+@click.option('--pctid', 
+              default=95, 
+              help="for alignment: minimum percent identity to keep")
+@click.option('--log', 
+              default=None, 
+              help='name of log file for this process')
+def main(input_mg_table, input_sag_list, outdir, cores, 
+         mmd, mino, maxo, minlen, pctid, log):
     if log == None:
         log = "sag-mg-recruit.log"
         print("Logfile is: %s" % log)
     logging.basicConfig(filename=log, level=logging.INFO)
     
+    check_dependencies(REQUIRES)
+
     if outdir is None:
         outdir = "mg_sag_recruitment"
         logger.info("output directory is {outdir}".format(**locals()))
@@ -713,21 +754,37 @@ def main(input_mg_table, input_sag_list, outdir, cores, mmd, mino, maxo, minlen,
     summaryout = op.join(outdir, "summary_table.txt")
     
     logger.info("processing the metagenomes")
-    mgtbl = process_multi_mgs(input_mg_table, mgdir, threads, mmd, mino, maxo, minlen)
-    mglist = mg_tbl['to_recruit']
+    tbl_name = op.join(mgdir, "multi_mg_qc.csv")
+    if op.exists(tbl_name):
+        mgtbl = pd.read_csv(tbl_name, sep="\t")
+        logger.info("Metagenomes have already been processed.  Loading {tbl_name}".format(**locals()))
+    else:
+        mgtbl = process_multi_mgs(input_mg_table, mgdir, threads=cores, mmd=mmd, mino=mino, maxo=maxo, minlen=minlen)
+    
+    mglist = mgtbl['to_recruit']
     
     logger.info("calculating SAG completeness using CheckM")
     saglist = [i for i in open(input_sag_list).read().split("\n") if len(i) > 0]
     completeness_out = op.join(sagdir, "sag_completeness.txt")
-    sagtbl = checkm_completeness(saglist, completeness_out, cores)
+    
+    if op.exists(completeness_out):
+        sagtbl = pd.read_csv(completeness_out, sep="\t")
+        logger.info("SAGs have already been processed.  Loading {completeness_out}".format(**locals()))
+    else:
+        sagtbl = checkm_completeness(saglist, completeness_out, cores)
     
     logger.info("running bwa read recruitment")
     coverage_out = op.join(covdir, "coverage_info.txt")
-    cov_tbl = cov_from_list(mglist, saglist, covdir, pctid, cores, coverage_out, cleanup=True)
+    if op.exists(coverage_out):
+        covtbl = pd.read_csv(coverage_out, sep="\t")
+        logger.info("bwa recruitment has already been done. loading {coverage_out}".format(**locals()))
+    else:
+        covtbl = cov_from_list(mglist, saglist, covdir, pctid, cores, coverage_out, cleanup=True)
 
     # process tables to make summary table
     logger.info('putting together summary tables')
-    sagtbl['sag'] = [i.split("_")[0] for i in sagtbl['Bin Id']]
+    #sagtbl['sag'] = [i.split("_")[0] for i in sagtbl['Bin Id']]
+    sagtbl['sag'] = [i.split(".")[0] for i in sagtbl['Bin Id']]
     sagtbl.rename(columns={'Completeness':'sag_completeness', 
                            'total_bp':'sag_total_bp', 
                            'calculated_length':'sag_calculated_length'}, 
@@ -739,10 +796,22 @@ def main(input_mg_table, input_sag_list, outdir, cores, mmd, mino, maxo, minlen,
                           'read_count':'mg_read_count'}, 
                           inplace=True)
     mgshort = mgtbl[['metagenome', 'mg_wgs_technology', 'mg_read_count']]
+    
+    covtbl['sag'] = [i.split(".")[0] for i in covtbl['sag']]
+
     summary = covtbl.merge(mgshort, how='outer', on='metagenome')
     summary = summary.merge(sagshort, how='outer', on='sag')    
-    summary['prop_mg_recruited'] = (summary.total_reads_recruited*100/summary.sag_completeness)/summary.mg_read_count
-    summary['prop_mg_adjusted'] = summary['prop_mg_recruited']*summary['mg_wgs_technology'].map(wgs_factors)
+    
+    try:
+        summary['prop_mg_recruited'] = (summary.total_reads_recruited*100/summary.sag_completeness)/summary.mg_read_count
+        summary['prop_mg_adjusted'] = summary['prop_mg_recruited']*summary['mg_wgs_technology'].map(wgs_factors)
+    except Exception as inst:
+        logger.warning(type(inst))     # the exception instance
+        logger.warnning(inst.args)      # arguments stored in .args
+        logger.warning(inst)     
+        logger.warning("prop_mg_recruited and prop_mg_adjusted unable to be calculated.")
+        summary['prop_mg_recruited'] = "NA"
+        summary['prop_mg_adjusted'] = "NA"
     
     summary.to_csv(summaryout, sep="\t")
 

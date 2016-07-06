@@ -167,8 +167,8 @@ def mask_sag(input_gb, out_fasta):
                             cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
                             logger.info('rRNA gene found on contig %s' % r.name)
                             rrna_count += 1
-                    else:
-                        print(f)
+                    #else:
+                        #print(f)
 
             # if the contig contains one rRNA gene (most common if rRNA present)
             if len(cloc) == 1:
@@ -198,6 +198,38 @@ def mask_sag(input_gb, out_fasta):
                 print(masked[i:i+80], file=oh)
     logger.info('%s rRNA genes found in %s' % (rrna_count, op.basename(input_gb)))
     return out_fasta
+
+
+def gbk_to_fasta(input_gb, out_fasta):
+    with open(input_gb, "rU") as input_handle, open(out_fasta, "w") as oh:
+        rrna_count = 0
+        for r in SeqIO.parse(input_handle, "genbank"):
+            print(">", r.name, sep="", file=oh)
+            print(r.seq, file=oh)
+        return out_fasta
+
+def proccess_gb_sags(tbl, outdir):
+    if op.exists(outdir)==False:
+        safe_makedir(outdir)
+
+    try:
+        df = pd.read_csv(intable)
+    except IOError as e:
+        raise IOError("input table not found")
+    
+    fas_sags = []
+
+    for i, l in df.iterrows():
+        if l.mask == True:
+            if op.exists(l.gbk_file):
+                outfasta = op.join(outdir, l.sag_name+".masked.fasta")
+                fas_sags.append(mask_sag(l.gbk_file, outfasta))
+            else:
+                logger.error("could not find input genbank file to mask")
+        if l.mask == False:
+            fas_sags.append(gbk_to_fasta(l.gbk_file)) if l.fasta_file is None else fas_sags.append(l.fasta_file)
+            
+
 
 
 @cli.command('completeness', short_help='create dataframe of completeness values for list of sags')
@@ -235,11 +267,39 @@ def run_mask_sag(input_gb, out_fasta, log):
         print("Logfile is: %s" % log)
     logging.basicConfig(filename=log, level=logging.DEBUG)
     if out_fasta == None:
-        out_fasta = op.basename(input_gb).split(".")[0]+"_masked.fasta"
+        out_fasta = op.basename(input_gb).split(".")[0]+".masked.fasta"
         logger.info("output fasta file will be: %s" % out_fasta)
         print("output fasta file will be: %s" % out_fasta)
     out = mask_sag(input_gb, out_fasta)    
     return out
+
+
+##TODO: complete this function to mask multiple SAGs at the same time.
+@cli.command('multi', short_help='multitask sag_qc by providing a input csv file with'
+                                 'instructions for multiple SAGs')
+@click.option('--input_table', 
+               help='sag input table')
+@click.option('--output_dir', 
+               help='output directory for masked sags')
+@click.option('--log', 
+               help='name of log file')
+def mask_sags_calculate_completeness(input_table, output_dir):
+    if log == None:
+        log = "mask_%s.log" % "_".join(input_gb.split(".")[:-1])
+        print("Logfile is: %s" % log)
+    logging.basicConfig(filename=log, level=logging.DEBUG)
+
+    if op.exists(outdir) == False:
+        safe_makedir(outdir)
+    
+    try:
+        df = pd.read_csv(input_table)
+    except IOError as e:
+        raise IOError("input table not found")
+    
+
+    
+    
 
 
 if __name__ == '__main__':
