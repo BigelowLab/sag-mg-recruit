@@ -53,7 +53,7 @@ for help:
 to run with 95% identity alignment, 40 cores, minimum read length of 100:
 
 ```
-sag-mg-recruit --outdir <path to output dir> --cores 40 --minlen 100  --pctid 95 <input mg table> <input sag table>
+sag-mg-recruit --outdir <path to output dir> --cores 40 --minlen 100  --pctid 95 --log recruitment.log <input mg table> <input sag table>
 ```
 
 
