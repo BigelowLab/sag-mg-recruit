@@ -35,11 +35,30 @@ Options:
 - wgs_technology: specify whether the library was sequenced with either illumina (enter "illumina") or 454-pyrosequencing (enter "pyro")
 - join: designate whether you want the metagenome to be joined or not; either True or False
 
+See mg_template.xlsx for example table.  Input your own information and save as a .csv file.
+
 ```intput_sag_table``` is a csv formatted table with the following columns:
 - sag_name: any string with no spaces or '.'
 - fasta_file: None if sag should be masked, otherwise path to input fasta to be processed
 - gbk_file: path to SAG's annotated gbk file if mask = True
 - mask: boolean indicating whether the SAG should have the 16/23S sequences masked (TRUE) or not (FALSE)
+
+See sag_template.xlsx for example table.  Input your own information in excel and save as a .csv file.
+
+### Example input script:
+for help:
+
+```sag-mg-recruit -h```
+
+to run with 95% identity alignment, 40 cores, minimum read length of 100:
+
+```
+sag-mg-recruit --outdir <path to output dir> --cores 40 --minlen 100  --pctid 95 <input mg table> <input sag table>
+```
+
+
+
+### Output:
 
 The program will create a new output directory with three sub-directories:
 ```coverage```, ```mgs``` and ```sags``` which will contain various output files created during the recruitment process.  
@@ -60,5 +79,3 @@ That table has one row per mg-sag pair with the following columns:
 - sag_size_mbp: SAG size in megabasepairs (mbp)
 - reads_per_mbp: number of reads recruited per SAG mbp
 - prop_mgreads_per_mbp: proprtion metagenomic reads recruited per SAG mbp
-
-
