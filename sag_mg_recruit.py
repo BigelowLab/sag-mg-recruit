@@ -390,10 +390,10 @@ def checkm_completeness(saglist, outfile, cores):
             continue
 
         length = count_fasta_bp(s)
-        #print("sag %s is %s bp in length" % (s, length))
+        # print("sag %s is %s bp in length" % (s, length))
 
         completeness['total_bp'] = length
-        completeness['calculated_length'] = int(completeness.total_bp * 100/completeness.Completeness)
+        # completeness['calculated_length'] = int(completeness.total_bp * 100/completeness.Completeness)
         
         df = pd.concat([df, completeness])
 
@@ -803,15 +803,21 @@ def main(input_mg_table, input_sag_list, outdir, cores,
     summary = summary.merge(sagshort, how='outer', on='sag')    
     
     try:
-        summary['prop_mg_recruited'] = (summary.total_reads_recruited*100/summary.sag_completeness)/summary.mg_read_count
-        summary['prop_mg_adjusted'] = summary['prop_mg_recruited']*summary['mg_wgs_technology'].map(wgs_factors)
+        summary['sag_size_mbp'] = summary.sag_total_bp/1000000
+        summary['reads_per_mbp'] = summary.total_reads_recruited/summary.sag_size.mbp
+        summary['prop_mgreads_per_mbp'] = (summary.reads_per_mbp)/summary.mg_read_count
+        #summary['prop_mg_adjusted'] = summary['prop_mg_recruited']*summary['mg_wgs_technology'].map(wgs_factors)
     except Exception as inst:
         logger.warning(type(inst))     # the exception instance
         logger.warnning(inst.args)      # arguments stored in .args
         logger.warning(inst)     
         logger.warning("prop_mg_recruited and prop_mg_adjusted unable to be calculated.")
-        summary['prop_mg_recruited'] = "NA"
-        summary['prop_mg_adjusted'] = "NA"
+        summary['reads_per_mbp'] = "NA"
+        summary['prop_mgreads_per_mbp'] = "NA"
+        summary['sag_size_mbp'] = 'NA'
+
+        #summary['prop_mg_recruited'] = "NA"
+        #summary['prop_mg_adjusted'] = "NA"
     
     summary.to_csv(summaryout, sep="\t")
 

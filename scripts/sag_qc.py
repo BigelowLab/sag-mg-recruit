@@ -299,7 +299,14 @@ def mask_sags_calculate_completeness(input_table, output_dir):
         df = pd.read_csv(input_table)
     except IOError as e:
         raise IOError("input table not found")
-    
+    newfiles = []
+    df = pd.read_csv(sag_tbl)
+    for i, r in df.iterrows():
+        out_fasta = df.sag_name+".masked.fasta"
+        out = mask_sag(df.gbk_file, out_fasta)
+        newfiles.append(out)
+    return newfiles
+
 
     
     
