@@ -29,11 +29,16 @@ Options:
   -h, --help        Show this message and exit.
 ```
 
-```input_mg_table``` should be a csv file created using the mg_template.xlsx within the program directory.
-```intput_sag_list``` is a list of file paths to SAGs in fasta format to be used by this process.
+```input_mg_table``` should be a csv file created using the mg_template.xlsx within the program directory.  The columns are:
+- mg_f: path to forward reads for metagenome
+- mg_r: path to reverse metagenomic reads (if there are none, put "None" in this column)
+- wgs_technology: specify whether the library was sequenced with either illumina (enter "illumina") or 454-pyrosequencing (enter "pyro")
+- join: designate whether you want the metagenome to be joined or not; either True or False
+
+```intput_sag_list``` is a text file containing a list of file paths to SAGs in fasta format to be used by this process, entered by line.
 
 The program will create a new output directory with three sub-directories:
-coverage, mgs and sags which will contain various output files created during the recruitment process.  
+```coverage```, ```mgs``` and ```sags``` which will contain various output files created during the recruitment process.  
 
 The final output table will be located in the main output directory, called "summary_table.txt".
 
