@@ -1,4 +1,5 @@
-#!usr/bin/env python
+#!/usr/bin/env python
+# coding=utf-8
 
 from scgc.utils import file_transaction, pigz_file
 from Bio import SeqIO
