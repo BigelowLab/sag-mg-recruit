@@ -292,9 +292,9 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
     for n, f, r in zip(tojoin['name'], tojoin['mg_f'], tojoin['mg_r']):
         if pd.isnull(r):  # if reverse read cell is blank, but join=True, reads assumed to be interleaved
             r=None
-        wd = os.getcwd()
-        f = f.replace(wd, "./")
-        r = r.replace(wd, "./")
+        #wd = os.getcwd()
+        #f = f.replace(wd, "./")
+        #r = r.replace(wd, "./")
         joinedfq = join(n, f, fq2=r, threads=threads, mmd=mmd, mino=mino, maxo=maxo, outdir=outdir)
         mglist.append(joinedfq)
     
@@ -314,12 +314,132 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
     data = {'name':nameorder, 'to_recruit': processed_mgs, 'read_count':read_counts}
     newinfo = pd.DataFrame(data)
     res_table = pd.merge(df, newinfo, how='outer', on='name')
-    tbl_name = op.join(outdir, "multi_mg_qc.csv")
+    tbl_name = op.join(outdir, "multi_mg_qc.txt")
     res_table.to_csv(tbl_name, sep="\t")
     return res_table
 
 
 # SAG functions
+def mask_sag(input_gb, out_fasta):
+    '''output masked contigs with rRNA changed to 'N's
+    Args:
+        input_gb (str): path to annotated input genbank formatted genome
+        out_fasta (str): where to write the output fasta to
+    Returns:
+        fasta file with rRNA regions masked with 'N's
+        out_fasta (str)
+    '''
+    #if input_gb.endswith(".gb") == False or input_gb.endswith(".gbk") == False:
+    #    logger.error("input file does not appear to be in genbank format.  Please check.")
+    #    return None
+
+    with open(input_gb, "rU") as input_handle, open(out_fasta, "w") as oh:
+        rrna_count = 0
+        for r in SeqIO.parse(input_handle, "genbank"):
+            print(">", r.name, sep="", file=oh)
+            s = r.seq
+            cloc = []
+            masked = ""
+            for f in r.features:
+                if f.type == "rRNA" or f.type == "RNA":
+                    if ('gene' in f.qualifiers and 
+                       ("16S" in str(f.qualifiers['gene']).upper() or 
+                        "23S" in str(f.qualifiers['gene']).upper())):
+                            cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
+                            logger.info('rRNA gene found on contig %s' % r.name)
+                            rrna_count += 1      
+                    elif ('product' in f.qualifiers and 
+                         ("16S" in str(f.qualifiers['product']).upper() or 
+                        "23S" in str(f.qualifiers['product']).upper())):
+                        #print(f)
+                            cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
+                            logger.info('rRNA gene found on contig %s' % r.name)
+                            rrna_count += 1
+                    #else:
+                        #print(f)
+
+            # if the contig contains one rRNA gene (most common if rRNA present)
+            if len(cloc) == 1:
+                masked += s[0:cloc[0].start-1]
+                masked += 'N'*(cloc[0].end - cloc[0].start)
+                masked += s[cloc[0].end-1:]
+            # probably won't be instances where below is true
+            elif len(cloc) > 1:
+                for i in range(0, len(cloc)):
+                    # if it's the first entry
+                    if i == 0:
+                        masked += s[0:cloc[i].start-1]
+                        masked += 'N'*(cloc[i].end - cloc[i].start)
+                    # if it's the last entry
+                    elif i == len(cloc)-1:
+                        masked += s[cloc[i-1].end-1:cloc[i].start-1]
+                        masked += 'N'*(cloc[i].end - cloc[i].start)
+                        masked += s[cloc[i].end:]
+                    else:
+                        masked += s[cloc[i-1].end-1:cloc[i].start-1]
+                        masked += 'N'*(cloc[i].end - cloc[i].start)
+            # if no rRNA on contig, just return the sequence, unmasked
+            else:
+                masked = s
+
+            for i in range(0, len(masked), 80):
+                print(masked[i:i+80], file=oh)
+    logger.info('%s rRNA genes found in %s' % (rrna_count, op.basename(input_gb)))
+    return out_fasta
+
+
+def gbk_to_fasta(input_gb, out_fasta):
+    with open(input_gb, "rU") as input_handle, open(out_fasta, "w") as oh:
+        rrna_count = 0
+        for r in SeqIO.parse(input_handle, "genbank"):
+            print(">", r.name, sep="", file=oh)
+            print(r.seq, file=oh)
+        return out_fasta
+
+
+def process_gb_sags(tbl, outdir):
+    '''process SAGs according to intsructions in input table
+    Args:
+        tbl (str): path to input table with the following columns:
+            sag_name: any string with no spaces or '.'
+            fasta_file: None if sag should be masked, otherwise path to input fasta to be processed
+            gbk_file: path to SAG's annotated gbk file
+            mask: boolean indicating whether the SAG should have the 16/23S sequences masked (TRUE) or not (FALSE)
+        outdir (str): path to output directory.  does not have to exists before running function.
+    Returns:
+        list of re-named SAGs in fasta format, with 16/23S masked by 'N's if mask == True
+    '''
+    if op.exists(outdir)==False:
+        safe_makedir(outdir)
+
+    try:
+        df = pd.read_csv(tbl)
+    except IOError as e:
+        raise IOError("input table not found")
+    
+    fas_sags = []
+    print(df)
+
+    for i, l in df.iterrows():
+        if l['mask'] == True:
+            print("True!!")
+            if op.exists(l.gbk_file):
+                outfasta = op.join(outdir, l.sag_name+".masked.fasta")
+                fas_sags.append(mask_sag(l.gbk_file, outfasta))
+                print(l.sag_name, "masked", sep=" ")
+            else:
+                logger.error("could not find input genbank file to mask")
+        elif l['mask'] == False:        # if mask not designated, write sag to fasta if gbk supplied, else use supplied fasta
+            out_fasta = op.join(outdir, l.sag_name+".fasta")
+            if l.fasta_file is None:
+                
+                fas_sags.append(gbk_to_fasta(l.gbk_file, out_fasta))
+            else:
+                shutil.copyfile(l.fasta_file, out_fasta) 
+            fas_sags.append(out_fasta)
+    return fas_sags
+
+
 def sag_checkm_completeness(fasta,  cores):
     '''run checkm lineage_wf on SAG to get completeness values
 
@@ -704,10 +824,14 @@ def cov_from_list(fastqlist, referencelist, outdir, pctid, cores, outtable, clea
 
 @click.command(context_settings=dict(help_option_names=['-h', '--help']))
 @click.argument('input_mg_table')
-@click.argument('input_sag_list')
+@click.argument('input_sag_table')
 # global options
-@click.option('--outdir', default=None, help='directory location to place output files')
-@click.option('--cores', default=8, help='number of cores to run on')
+@click.option('--outdir', 
+              default=None, 
+              help='directory location to place output files')
+@click.option('--cores', 
+              default=8, 
+              help='number of cores to run on')
 # mg processing options
 @click.option('--mmd', 
               type=click.FLOAT, 
@@ -731,13 +855,15 @@ def cov_from_list(fastqlist, referencelist, outdir, pctid, cores, outtable, clea
               help="for alignment: minimum percent identity to keep")
 @click.option('--log', 
               default=None, 
-              help='name of log file for this process')
-def main(input_mg_table, input_sag_list, outdir, cores, 
+              help='name of log file, else, log sent to standard out')
+def main(input_mg_table, input_sag_table, outdir, cores, 
          mmd, mino, maxo, minlen, pctid, log):
-    if log == None:
-        log = "sag-mg-recruit.log"
-        print("Logfile is: %s" % log)
-    logging.basicConfig(filename=log, level=logging.INFO)
+    if log is None:
+        log = logging.StreamHandler(sys.stdout)
+        log.setLevel(logging.INFO)
+        logger.addHandler(log)
+    else:
+        logging.basicConfig(filename=log, level=logging.INFO)
     
     check_dependencies(REQUIRES)
 
@@ -754,7 +880,7 @@ def main(input_mg_table, input_sag_list, outdir, cores,
     summaryout = op.join(outdir, "summary_table.txt")
     
     logger.info("processing the metagenomes")
-    tbl_name = op.join(mgdir, "multi_mg_qc.csv")
+    tbl_name = op.join(mgdir, "multi_mg_qc.txt")
     if op.exists(tbl_name):
         mgtbl = pd.read_csv(tbl_name, sep="\t")
         logger.info("Metagenomes have already been processed.  Loading {tbl_name}".format(**locals()))
@@ -763,8 +889,9 @@ def main(input_mg_table, input_sag_list, outdir, cores,
     
     mglist = mgtbl['to_recruit']
     
+    logger.info("processing sag table")
+    saglist = process_gb_sags(input_sag_table, sagdir)
     logger.info("calculating SAG completeness using CheckM")
-    saglist = [i for i in open(input_sag_list).read().split("\n") if len(i) > 0]
     completeness_out = op.join(sagdir, "sag_completeness.txt")
     
     if op.exists(completeness_out):
@@ -786,10 +913,10 @@ def main(input_mg_table, input_sag_list, outdir, cores,
     #sagtbl['sag'] = [i.split("_")[0] for i in sagtbl['Bin Id']]
     sagtbl['sag'] = [i.split(".")[0] for i in sagtbl['Bin Id']]
     sagtbl.rename(columns={'Completeness':'sag_completeness', 
-                           'total_bp':'sag_total_bp', 
-                           'calculated_length':'sag_calculated_length'}, 
+                           'total_bp':'sag_total_bp' 
+                           }, 
                            inplace=True)
-    sagshort = sagtbl[['sag', 'sag_completeness', 'sag_total_bp', 'sag_calculated_length']]
+    sagshort = sagtbl[['sag', 'sag_completeness', 'sag_total_bp']]
 
     mgtbl.rename(columns={'name':'metagenome', 
                           'wgs_technology':'mg_wgs_technology', 
@@ -804,12 +931,12 @@ def main(input_mg_table, input_sag_list, outdir, cores,
     
     try:
         summary['sag_size_mbp'] = summary.sag_total_bp/1000000
-        summary['reads_per_mbp'] = summary.total_reads_recruited/summary.sag_size.mbp
+        summary['reads_per_mbp'] = summary.total_reads_recruited/summary.sag_size_mbp
         summary['prop_mgreads_per_mbp'] = (summary.reads_per_mbp)/summary.mg_read_count
         #summary['prop_mg_adjusted'] = summary['prop_mg_recruited']*summary['mg_wgs_technology'].map(wgs_factors)
     except Exception as inst:
         logger.warning(type(inst))     # the exception instance
-        logger.warnning(inst.args)      # arguments stored in .args
+        logger.warning(inst.args)      # arguments stored in .args
         logger.warning(inst)     
         logger.warning("prop_mg_recruited and prop_mg_adjusted unable to be calculated.")
         summary['reads_per_mbp'] = "NA"

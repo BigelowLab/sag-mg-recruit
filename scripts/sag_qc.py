@@ -211,27 +211,47 @@ def gbk_to_fasta(input_gb, out_fasta):
             print(r.seq, file=oh)
         return out_fasta
 
-def proccess_gb_sags(tbl, outdir):
+def process_gb_sags(tbl, outdir):
+    '''process SAGs according to intsructions in input table
+    Args:
+        tbl (str): path to input table with the following columns:
+            sag_name: any string with no spaces or '.'
+            fasta_file: None if sag should be masked, otherwise path to input fasta to be processed
+            gbk_file: path to SAG's annotated gbk file
+            mask: boolean indicating whether the SAG should have the 16/23S sequences masked (TRUE) or not (FALSE)
+        outdir (str): path to output directory.  does not have to exists before running function.
+    Returns:
+        list of re-named SAGs in fasta format, with 16/23S masked by 'N's if mask == True
+    '''
     if op.exists(outdir)==False:
         safe_makedir(outdir)
 
     try:
-        df = pd.read_csv(intable)
+        df = pd.read_csv(tbl)
     except IOError as e:
         raise IOError("input table not found")
     
     fas_sags = []
+    print(df)
 
     for i, l in df.iterrows():
-        if l.mask == True:
+        if l['mask'] == True:
+            print("True!!")
             if op.exists(l.gbk_file):
                 outfasta = op.join(outdir, l.sag_name+".masked.fasta")
                 fas_sags.append(mask_sag(l.gbk_file, outfasta))
+                print(l.sag_name, "masked", sep=" ")
             else:
                 logger.error("could not find input genbank file to mask")
-        if l.mask == False:
-            fas_sags.append(gbk_to_fasta(l.gbk_file)) if l.fasta_file is None else fas_sags.append(l.fasta_file)
-            
+        elif l['mask'] == False:        # if mask not designated, write sag to fasta if gbk supplied, else use supplied fasta
+            out_fasta = op.join(outdir, l.sag_name+".fasta")
+            if l.fasta_file is None:
+                
+                fas_sags.append(gbk_to_fasta(l.gbk_file, out_fasta))
+            else:
+                shutil.copyfile(l.fasta_file, out_fasta) 
+            fas_sags.append(out_fasta)
+    return fas_sags
 
 
 
@@ -292,25 +312,8 @@ def mask_sags_calculate_completeness(input_table, output_dir):
         print("Logfile is: %s" % log)
     logging.basicConfig(filename=log, level=logging.DEBUG)
 
-    if op.exists(outdir) == False:
-        safe_makedir(outdir)
+    sags = process_gb_sags(input_tbl, output_dir)
     
-    try:
-        df = pd.read_csv(input_table)
-    except IOError as e:
-        raise IOError("input table not found")
-    newfiles = []
-    df = pd.read_csv(sag_tbl)
-    for i, r in df.iterrows():
-        out_fasta = df.sag_name+".masked.fasta"
-        out = mask_sag(df.gbk_file, out_fasta)
-        newfiles.append(out)
-    return newfiles
-
-
-    
-    
-
 
 if __name__ == '__main__':
     cli()
