@@ -418,12 +418,10 @@ def process_gb_sags(tbl, outdir):
         raise IOError("input table not found")
     
     fas_sags = []
-    print(df)
 
     for i, l in df.iterrows():
         if l['mask'] == True:
-            print("True!!")
-            if op.exists(l.gbk_file):
+            if l.gbk_file is not None and op.exists(l.gbk_file):
                 outfasta = op.join(outdir, l.sag_name+".masked.fasta")
                 fas_sags.append(mask_sag(l.gbk_file, outfasta))
                 print(l.sag_name, "masked", sep=" ")
@@ -432,7 +430,6 @@ def process_gb_sags(tbl, outdir):
         elif l['mask'] == False:        # if mask not designated, write sag to fasta if gbk supplied, else use supplied fasta
             out_fasta = op.join(outdir, l.sag_name+".fasta")
             if l.fasta_file is None:
-                
                 fas_sags.append(gbk_to_fasta(l.gbk_file, out_fasta))
             else:
                 shutil.copyfile(l.fasta_file, out_fasta) 
@@ -726,7 +723,23 @@ def get_coverage(bam_file, bedout=None):
 
 ### calculate coverage:
 
-def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
+def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe=None):
+    ''' calculate per-base coverage using bwa, samtools and bedtools
+
+    Args:
+        fastq (path): input metagenome in fastq format
+        reference (path): input reference genome in fasta format
+        outdir (path): path to output directory
+        pctid (int): minimum percent identity for aligned reads
+        cores (int): number of cores to run on 
+        cleanup (boolean): if True, delete .bam and .bai files after coverage is calculated
+        pe: intput True if reads are paird and interleaved
+    Outputs:
+        if cleanup = False, outputs .bam, .bai, .genomecoverage, and an .aln_count file
+        if cleanup = True, outputs .genomecoverage and .aln_count file only
+    Returns:
+        path to genome coverage file
+    '''
     fqpre = op.basename(fastq).split(".")[0]
     ref_pre = op.basename(reference).split(".")[0]
     outbam = op.join(os.path.abspath(outdir), fqpre+"_vs_"+ref_pre+".bam")
@@ -750,6 +763,14 @@ def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe):
 
 
 def get_recruit_info(gcov):
+    '''calculate information on recruited reads based on bedtools genomecoverage table
+    Args:
+        gcov (str): path to genome coverage file with recruitment pipeline naming convention of:
+            metagenome_vs_sag.genomecoverage
+            metagenome_vs_sag.aln_count file must also exists within the same directory
+    Returns:
+        pandas dataframe of genome coverage statistics
+    '''
     countfile = gcov.replace("genomecoverage", "aln_count")
     with open(countfile) as infile:
         recruit_count = infile.read().split()[1].strip()
@@ -797,6 +818,12 @@ def get_recruit_info(gcov):
 
 
 def genome_cov_table(gcov_list):
+    '''create large dataframe of metagenome recruitment information given a number of genome coverage files
+    Args:
+        gcov_list (list): list of paths to genome coverage files
+    Returns:
+        pandas dataframe summary of recruitment information from all genome coverage files in list
+    '''
     cols = ['sag',
             'metagenome',
             'Percent_scaffolds_with_any_coverage', 
@@ -810,11 +837,24 @@ def genome_cov_table(gcov_list):
     return big
 
 
-def cov_from_list(fastqlist, referencelist, outdir, pctid, cores, outtable, cleanup=False, pe=None):
+def cov_from_list(fastqlist, referencelist, outdir, pctid, cores, outtable, cleanup=False):
+    '''create large datframe of recruitment information for multiple SAGs against multiple metagenomes
+    Args:
+        fastqlist(list): list of paths to metagenomic reads in fastq format
+        referencelist(list): list of paths to SAGs in fasta format
+        outdir (str): name of output directory to print genome coverage to
+        pctid (int): percent identity of read alignments to keep
+        cores (int): number of cores to use
+        outtable (str): path to result table
+        cleanup (boolean): if true, delete all bam-type files
+    Returns:
+        writes output table to outtable
+        a pandas dataframe of the result table
+    '''
     bedlist = []
     for f in fastqlist:
         for r in referencelist:
-            bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, cores=cores, cleanup=cleanup, pe=pe)
+            bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, cores=cores, cleanup=cleanup)
             bedlist.append(bed)
     table = genome_cov_table(bedlist)
     table.to_csv(outtable, sep="\t")
