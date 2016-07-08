@@ -290,7 +290,7 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
     tojoin = df.loc[df['join']==True]
     
     for n, f, r in zip(tojoin['name'], tojoin['mg_f'], tojoin['mg_r']):
-        if pd.isnull(r):  # if reverse read cell is blank, but join=True, reads assumed to be interleaved
+        if pd.isnull(r) or r == "None":  # if reverse read cell is blank, but join=True, reads assumed to be interleaved
             r=None
         #wd = os.getcwd()
         #f = f.replace(wd, "./")
