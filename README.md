@@ -63,7 +63,7 @@ sag-mg-recruit --outdir <path to output dir> --cores 40 --minlen 100  --pctid 95
 The program will create a new output directory with three sub-directories:
 ```coverage```, ```mgs``` and ```sags``` which will contain various output files created during the recruitment process.  
 
-The final output table will be located in the main output directory, called "summary_table.txt".
+The final output table will be located in the main output directory, called "summary_table_pctidXX_minlenXX.txt".
 
 That table has one row per mg-sag pair with the following columns:
 - sag: SAG name
@@ -79,3 +79,21 @@ That table has one row per mg-sag pair with the following columns:
 - sag_size_mbp: SAG size in megabasepairs (mbp)
 - reads_per_mbp: number of reads recruited per SAG mbp
 - prop_mgreads_per_mbp: proprtion metagenomic reads recruited per SAG mbp
+
+
+#### Changing alignment parameters
+
+After you've run sag-mg-recruit, you can re-run the analysis with changed ```--pctid``` or ```--minlen``` parameters much more quickly than the original run by using the same input files, the same output file but only changing the ```--pctid``` and/or ```--minlen``` parameters. 
+
+For example, say your first run was:
+
+```
+sag-mg-recruit --outdir /home/smroutput --cores 40 --minlen 150  --pctid 95 --log recruitment.log mgtbl.txt sagtbl.txt
+```
+
+Re-run with different minlen and pctid parameters:
+```
+sag-mg-recruit --outdir /home/smroutput --cores 40 --minlen 100  --pctid 90 --log recruitment.log mgtbl.txt sagtbl.txt
+```
+
+FLASH is the longest step, followed by initial bwa recruitment.  
