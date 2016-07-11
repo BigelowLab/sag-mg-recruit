@@ -315,7 +315,7 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
     newinfo = pd.DataFrame(data)
     res_table = pd.merge(df, newinfo, how='outer', on='name')
     tbl_name = op.join(outdir, "multi_mg_qc.txt")
-    res_table.to_csv(tbl_name, sep="\t")
+    res_table.to_csv(tbl_name, sep="\t", index=False)
     return res_table
 
 
@@ -857,7 +857,7 @@ def cov_from_list(fastqlist, referencelist, outdir, pctid, cores, outtable, clea
             bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, cores=cores, cleanup=cleanup)
             bedlist.append(bed)
     table = genome_cov_table(bedlist)
-    table.to_csv(outtable, sep="\t")
+    table.to_csv(outtable, sep="\t", index=False)
     return table
     print("result table written to {outfile}".format(outfile=outtable))
 
@@ -917,7 +917,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     sagdir = safe_makedir(sagdir)
     covdir = op.join(outdir, 'coverage')
     covdir = safe_makedir(covdir)
-    summaryout = op.join(outdir, "summary_table.txt")
+    summaryout = op.join(outdir, "summary_table_pctid{pctid}_minlen{minlen}.txt".format(**locals()))
     
     logger.info("processing the metagenomes")
     tbl_name = op.join(mgdir, "multi_mg_qc.txt")
@@ -932,7 +932,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     logger.info("processing sag table")
     saglist = process_gb_sags(input_sag_table, sagdir)
     logger.info("calculating SAG completeness using CheckM")
-    completeness_out = op.join(sagdir, "sag_completeness.txt")
+    completeness_out = op.join(sagdir, "sag_completeness.txt".format(**locals()))
     
     if op.exists(completeness_out):
         sagtbl = pd.read_csv(completeness_out, sep="\t")
@@ -941,7 +941,8 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         sagtbl = checkm_completeness(saglist, completeness_out, cores)
     
     logger.info("running bwa read recruitment")
-    coverage_out = op.join(covdir, "coverage_info.txt")
+    
+    coverage_out = op.join(covdir, "coverage_info_pctid{pctid}_minlen{minlen}.txt".format(**locals()))
     if op.exists(coverage_out):
         covtbl = pd.read_csv(coverage_out, sep="\t")
         logger.info("bwa recruitment has already been done. loading {coverage_out}".format(**locals()))
@@ -967,7 +968,9 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     covtbl['sag'] = [i.split(".")[0] for i in covtbl['sag']]
 
     summary = covtbl.merge(mgshort, how='outer', on='metagenome')
-    summary = summary.merge(sagshort, how='outer', on='sag')    
+    summary = summary.merge(sagshort, how='outer', on='sag')
+    
+    summary[['sag_total_bp', 'total_reads_recruited', 'mg_read_count']] = summary[['sag_total_bp', 'total_reads_recruited', 'mg_read_count']].convert_objects(convert_numeric=True) 
     
     try:
         summary['sag_size_mbp'] = summary.sag_total_bp/1000000
@@ -978,7 +981,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         logger.warning(type(inst))     # the exception instance
         logger.warning(inst.args)      # arguments stored in .args
         logger.warning(inst)     
-        logger.warning("prop_mg_recruited and prop_mg_adjusted unable to be calculated.")
+        logger.warning("the three final values in the summary table were unable to be calculated.")
         summary['reads_per_mbp'] = "NA"
         summary['prop_mgreads_per_mbp'] = "NA"
         summary['sag_size_mbp'] = 'NA'
@@ -986,7 +989,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         #summary['prop_mg_recruited'] = "NA"
         #summary['prop_mg_adjusted'] = "NA"
     
-    summary.to_csv(summaryout, sep="\t")
+    summary.to_csv(summaryout, sep="\t", index=False)
 
     logger.info('process completed.')
     return summary
