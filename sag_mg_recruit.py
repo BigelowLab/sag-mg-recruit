@@ -35,7 +35,7 @@ from scgc.fastx import readfx
 
 __version_info__ = (0, 0, 0)
 __version__ = '.'.join(map(str, __version_info__))
-REQUIRES = ["bedtools", "samtools", "checkm", "bwa", "gzip", "gunzip", "Rscript"]
+REQUIRES = ["bedtools", "samtools", "checkm", "bwa", "gzip", "gunzip"]
 
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,7 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
             exists = True
         else:
             exists = False
+            logger.debug("file %s does not exist" % o)
             break
 
     if exists == True:
