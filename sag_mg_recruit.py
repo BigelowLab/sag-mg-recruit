@@ -70,7 +70,7 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
         list of output files in the order: joined reads, not combined fwd reads, not combined rev reads, hist, histogram
     """
 
-    outsuffix = [".extendedFrags.fastq.gz", "out.notCombined_1.fastq.gz", ".notCombined_2.fastq.gz", ".hist", ".histogram"]
+    outsuffix = [".extendedFrags.fastq.gz", ".notCombined_1.fastq.gz", ".notCombined_2.fastq.gz", ".hist", ".histogram"]
     outfiles = [prefix+i for i in outsuffix]
     for o in outfiles:
         if op.exists(o):
@@ -314,7 +314,7 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
     data = {'name':nameorder, 'to_recruit': processed_mgs, 'read_count':read_counts}
     newinfo = pd.DataFrame(data)
     res_table = pd.merge(df, newinfo, how='outer', on='name')
-    tbl_name = op.join(outdir, "multi_mg_qc.txt")
+    tbl_name = op.join(outdir, "multi_mg_qc_minlen{minlen}.txt".format(**locals()))
     res_table.to_csv(tbl_name, sep="\t", index=False)
     return res_table
 
@@ -920,7 +920,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     summaryout = op.join(outdir, "summary_table_pctid{pctid}_minlen{minlen}.txt".format(**locals()))
     
     logger.info("processing the metagenomes")
-    tbl_name = op.join(mgdir, "multi_mg_qc.txt")
+    tbl_name = op.join(mgdir, "multi_mg_qc_minlen{minlen}.txt".format(**locals()))
     if op.exists(tbl_name):
         mgtbl = pd.read_csv(tbl_name, sep="\t")
         logger.info("Metagenomes have already been processed.  Loading {tbl_name}".format(**locals()))
