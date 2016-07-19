@@ -599,7 +599,20 @@ def _match_len(md):
     return length
 
 
-def filter_bam(bam, outbam, pctid = 95):
+def read_overlap_pctid(samline, overlap, pctid):
+    reallen = l.infer_query_length()
+    alnlen = l.query_length
+    mismatch = l.get_tag("NM")
+    
+    aln_overlap = alnlen/reallen * 100
+    aln_pctid = (alnlen-mismatch)/alnlen * 100
+    if aln_overlap >= overlap and aln_pctid >= pctid:
+        return True
+    else:
+        return False
+
+
+def filter_bam(bam, outbam, overlap = 95, pctid = 95):
     with pysam.AlignmentFile(bam, "rb") as ih, pysam.AlignmentFile(outbam, "wb", template=ih) as oh:
         good = 0
         total = 0
@@ -610,13 +623,17 @@ def filter_bam(bam, outbam, pctid = 95):
                 continue
 
             total += 1
-            md = str(l).split("\t")[-1].split(",")[3].replace(")","").replace("'","").strip()  # get md value from raw bam entry
-            match = _match_len(md)
-            pct_match = (match)/l.rlen * 100
+            #md = str(l).split("\t")[-1].split(",")[3].replace(")","").replace("'","").strip()  # get md value from raw bam entry
+            #match = _match_len(md)
+            #pct_match = (match)/l.rlen * 100
 
-            if pct_match > pctid:
+            #if pct_match > pctid:
+            #    good += 1
+            #    oh.write(l)
+            if read_overlap_pctid(l, overlap, pctid) == True:
                 good += 1
                 oh.write(l)
+
         with open(outfile, "w") as oh:
             print(name, good, file=oh)
         print("there were %s good read alignments out of %s total alignments" % (good, total))
@@ -686,7 +703,7 @@ def bwa_mem(fastq, out_file, reference, options, cores=1):
 
     with file_transaction(out_file) as tx_out_file:
         cmd = ("bwa mem -t {cores} {options} {index} {fastq} | samtools view "
-               "-ShuF4q2 - | samtools sort -o -m 8G - tmp > {result}"
+               "-ShuF4q2 - | samtools sort -o -H -m 8G - tmp > {result}"
               ).format(cores=cores,
                        options=opts,
                        index=reference,
@@ -733,7 +750,7 @@ def get_coverage(bam_file, bedout=None):
 
 ### calculate coverage:
 
-def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe=None):
+def print_real_cov(fastq, reference, outdir, pctid, overlap, cores, cleanup, pe=None):
     ''' calculate per-base coverage using bwa, samtools and bedtools
 
     Args:
@@ -759,7 +776,7 @@ def print_real_cov(fastq, reference, outdir, pctid, cores, cleanup, pe=None):
     else:
         bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
 
-    bam = filter_bam(bam, bam.replace(".bam", ".{pctid}.bam".format(**locals())), pctid=pctid)
+    bam = filter_bam(bam, bam.replace(".bam", ".{pctid}.bam".format(**locals())), overlap=overlap, pctid=pctid)
 
     bed = get_coverage(bam)                         # create per base coverage table
     print("coverage_table_created, called:", bed)
@@ -847,7 +864,7 @@ def genome_cov_table(gcov_list):
     return big
 
 
-def cov_from_list(fastqlist, referencelist, outdir, pctid, cores, outtable, cleanup=False):
+def cov_from_list(fastqlist, referencelist, outdir, pctid, overlap, cores, outtable, cleanup=False):
     '''create large datframe of recruitment information for multiple SAGs against multiple metagenomes
     Args:
         fastqlist(list): list of paths to metagenomic reads in fastq format
@@ -864,7 +881,7 @@ def cov_from_list(fastqlist, referencelist, outdir, pctid, cores, outtable, clea
     bedlist = []
     for f in fastqlist:
         for r in referencelist:
-            bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, cores=cores, cleanup=cleanup)
+            bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, overlap=overlap, cores=cores, cleanup=cleanup)
             bedlist.append(bed)
     table = genome_cov_table(bedlist)
     table.to_csv(outtable, sep="\t", index=False)
@@ -892,33 +909,36 @@ def concatenate_fastas(fastalist, outfasta):
               help='directory location to place output files')
 @click.option('--cores', 
               default=8, 
-              help='number of cores to run on')
+              help='number of cores to run on, default=8')
 # mg processing options
 @click.option('--mmd', 
               type=click.FLOAT, 
               default=0.05, 
-              help='for join step: mismatch density for join step in mg processing')
+              help='for join step: mismatch density for join step in mg processing, default=0.05')
 @click.option('--mino', 
               type=click.INT, 
               default=35, 
-              help='for join step: minimum overlap for join step')
+              help='for join step: minimum overlap for join step, default=35bp')
 @click.option('--maxo', 
               type=click.INT, 
               default=150, 
-              help='for join step: maximum overlap for join step')
+              help='for join step: maximum overlap for join step, default=150bp')
 @click.option('--minlen', 
               type=click.INT, 
               default=150, 
-              help='for metagenomes: minimum read length')
+              help='for metagenomes: minimum read length, default=150bp')
 # coverage options
 @click.option('--pctid', 
               default=95, 
-              help="for alignment: minimum percent identity to keep")
+              help="for alignment: minimum percent identity to keep within overlapping region, default=95")
+@click.option('--overlap',
+              default=95, 
+              help="for alignment: percent read that must overlap with reference sequence to keep, default=95")
 @click.option('--log', 
               default=None, 
               help='name of log file, else, log sent to standard out')
 def main(input_mg_table, input_sag_table, outdir, cores, 
-         mmd, mino, maxo, minlen, pctid, log):
+         mmd, mino, maxo, minlen, pctid, overlap, log):
     if log is None:
         log = logging.StreamHandler(sys.stdout)
         log.setLevel(logging.INFO)
@@ -974,7 +994,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         covtbl = pd.read_csv(coverage_out, sep="\t")
         logger.info("bwa recruitment has already been done. loading {coverage_out}".format(**locals()))
     else:
-        covtbl = cov_from_list(mglist, saglist, covdir, pctid, cores, coverage_out, cleanup=True)
+        covtbl = cov_from_list(mglist, saglist, covdir, pctid, overlap, cores, coverage_out, cleanup=True)
 
     # process tables to make summary table
     logger.info('putting together summary tables')
