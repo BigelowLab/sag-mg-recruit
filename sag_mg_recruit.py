@@ -11,18 +11,14 @@ import subprocess
 import os
 import sys
 import pandas as pd
-from pandas import Series
 from itertools import groupby
 import click
-import glob
-import re
 import os.path as op
 import logging
 import shutil
 import gzip
 import pysam
 from Bio import SeqIO
-from collections import defaultdict
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -87,9 +83,9 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
     #with file_transaction(outfiles) as tx:
     with file_transaction(outfiles) as tx_outfiles:
         if fastq2 is None:
-            print("only one fastq file provided, assuming it is interleaved", file=sys.stderr)
+            logger.info("only one fastq file provided, assuming it is interleaved", file=sys.stderr)
             cmd = ("flash --interleaved-input -x {mismatch} -m {min} "
-                   "-M {max} -t {threads} -z -o {prefix} {fastq1} ").format(mismatch=mismatch_density,
+                   "-M {max} -t {threads} -z -o {prefix} {fastq1}").format(mismatch=mismatch_density,
                         min=min_overlap, max=max_overlap, threads=cores, prefix=prefix,
                         fastq1=fastq1)            
         else:
@@ -98,7 +94,11 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
                         min=min_overlap, max=max_overlap, threads=cores,
                         fastq1=fastq1, fastq2=fastq2, prefix=prefix))
         logger.info("running flash: %s" % cmd)
-        run(cmd, description="Joining reads with flash")
+        try:
+            run(cmd, description="Joining reads with flash")
+        except:
+            logger.error("join step could not be performed for {fastq1}".format(**locals()))
+            return ["","","","","",""]
     return outfiles
 
 
@@ -166,9 +166,9 @@ def read_count(fname):
         cat = "cat"
 
     if not fq:
-        cmd = '%s %s | grep -c "^>"' % (cat, fname)
+        cmd = '%s %s | grep -c "^>"' % (cat, count_file)
     else:
-        cmd = '%s %s | wc -l' % (cat, fname)
+        cmd = '%s %s | wc -l' % (cat, count_file)
 
     for line in run(cmd, description="Counting reads", iterable=True):
         total = int(line.rstrip())
@@ -253,6 +253,8 @@ def join(prefix, fq1, fq2=None, mmd=.05, mino=35, maxo=350, threads=20, outdir="
     outpath = os.path.join(outdir, prefix)
     outfiles = run_flash(outpath, fq1, fastq2=fq2, mismatch_density=mmd, min_overlap=mino,
         max_overlap=maxo, cores=threads)
+    if len(outfiles[0]) == 0:
+        return outfiles[0]
     histin = outfiles[3]
     joined, reads = join_stats(histin, fq1, fastq2=fq2, prefix=prefix, outdir=outdir)
     compare_read_counts(joined, reads)
@@ -303,6 +305,11 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
     processed_mgs = []
     read_counts = []
     nameorder = []
+    
+    if len(mglist) == 0:
+        logger.error("no mgs created, pipeline aborted")
+        return pd.DataFrame()
+
     for m in mglist:
         nameorder.append(op.basename(m).split(".")[0])
         newfilename = op.basename(m).replace(".fastq", ".minlen_%s.fastq" % minlen)
@@ -345,13 +352,17 @@ def mask_sag(input_gb, out_fasta):
                 if f.type == "rRNA" or f.type == "RNA":
                     if ('gene' in f.qualifiers and 
                        ("16S" in str(f.qualifiers['gene']).upper() or 
-                        "23S" in str(f.qualifiers['gene']).upper())):
+                        "23S" in str(f.qualifiers['gene']).upper() or 
+                        "Subunit Ribosomal RNA" in str(f.qualifiers['gene']).upper() or
+                        "suRNA" in str(f.qualifiers['gene']).upper())):
                             cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
                             logger.info('rRNA gene found on contig %s' % r.name)
                             rrna_count += 1      
                     elif ('product' in f.qualifiers and 
                          ("16S" in str(f.qualifiers['product']).upper() or 
-                        "23S" in str(f.qualifiers['product']).upper())):
+                        "23S" in str(f.qualifiers['product']).upper() or 
+                        "Subunit Ribosomal RNA" in str(f.qualifiers['product']).upper() or
+                        "suRNA" in str(f.qualifiers['product']).upper())):
                         #print(f)
                             cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
                             logger.info('rRNA gene found on contig %s' % r.name)
@@ -391,7 +402,6 @@ def mask_sag(input_gb, out_fasta):
 
 def gbk_to_fasta(input_gb, out_fasta):
     with open(input_gb, "rU") as input_handle, open(out_fasta, "w") as oh:
-        rrna_count = 0
         for r in SeqIO.parse(input_handle, "genbank"):
             print(">", r.name, sep="", file=oh)
             print(r.seq, file=oh)
@@ -415,7 +425,7 @@ def process_gb_sags(tbl, outdir):
 
     try:
         df = pd.read_csv(tbl)
-    except IOError as e:
+    except:
         raise IOError("input table not found")
     
     fas_sags = []
@@ -575,12 +585,11 @@ def index_bam(bam_file):
 
 def _match_len(md):
     length=0
-    mismatch=0
     number=""
     for i, c in enumerate(md):
         try:
             val = int(c)
-            number = number+c
+            number = number+val
         except:
             if len(number) > 0:
                 length += int(number)
@@ -863,6 +872,17 @@ def cov_from_list(fastqlist, referencelist, outdir, pctid, cores, outtable, clea
     print("result table written to {outfile}".format(outfile=outtable))
 
 
+def concatenate_fastas(fastalist, outfasta):
+    with open(outfasta, "w") as oh:
+        for s in fastalist:
+            with gzopen(s) as ih:
+                for name, seq in read_fasta(ih):
+                    print(">"+name, file=oh)
+                    for i in range(0, len(seq), 80):
+                        print(seq[i:i+80], file=oh)
+    return outfasta
+
+
 @click.command(context_settings=dict(help_option_names=['-h', '--help']))
 @click.argument('input_mg_table')
 @click.argument('input_sag_table')
@@ -942,6 +962,12 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         sagtbl = checkm_completeness(saglist, completeness_out, cores)
     
     logger.info("running bwa read recruitment")
+    
+    sagconcat = op.join(sagdir, "concatenated_sags.fasta")
+    if op.exists(sagconcat) == False:
+        sagconcat = concatenate_fastas(saglist, sagconcat)    
+    
+    saglist.append(sagconcat)    
     
     coverage_out = op.join(covdir, "coverage_info_pctid{pctid}_minlen{minlen}.txt".format(**locals()))
     if op.exists(coverage_out):
