@@ -353,16 +353,16 @@ def mask_sag(input_gb, out_fasta):
                     if ('gene' in f.qualifiers and 
                        ("16S" in str(f.qualifiers['gene']).upper() or 
                         "23S" in str(f.qualifiers['gene']).upper() or 
-                        "Subunit Ribosomal RNA" in str(f.qualifiers['gene']).upper() or
-                        "suRNA" in str(f.qualifiers['gene']).upper())):
+                        "Subunit Ribosomal RNA".upper() in str(f.qualifiers['gene']).upper() or
+                        "suRNA".upper() in str(f.qualifiers['gene']).upper())):
                             cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
                             logger.info('rRNA gene found on contig %s' % r.name)
                             rrna_count += 1      
                     elif ('product' in f.qualifiers and 
                          ("16S" in str(f.qualifiers['product']).upper() or 
                         "23S" in str(f.qualifiers['product']).upper() or 
-                        "Subunit Ribosomal RNA" in str(f.qualifiers['product']).upper() or
-                        "suRNA" in str(f.qualifiers['product']).upper())):
+                        "Subunit Ribosomal RNA".upper() in str(f.qualifiers['product']).upper() or
+                        "suRNA".upper() in str(f.qualifiers['product']).upper())):
                         #print(f)
                             cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
                             logger.info('rRNA gene found on contig %s' % r.name)
@@ -599,7 +599,7 @@ def _match_len(md):
     return length
 
 
-def read_overlap_pctid(samline, overlap, pctid):
+def read_overlap_pctid(l, overlap, pctid):
     reallen = l.infer_query_length()
     alnlen = l.query_length
     mismatch = l.get_tag("NM")
@@ -613,7 +613,7 @@ def read_overlap_pctid(samline, overlap, pctid):
 
 
 def filter_bam(bam, outbam, overlap = 95, pctid = 95):
-    with pysam.AlignmentFile(bam, "rb") as ih, pysam.AlignmentFile(outbam, "wb", template=ih) as oh:
+    with pysam.AlignmentFile(bam, "rb", check_sq=False) as ih, pysam.AlignmentFile(outbam, "wb", template=ih) as oh:
         good = 0
         total = 0
         name = op.basename(outbam).split(".")[0]
@@ -703,7 +703,7 @@ def bwa_mem(fastq, out_file, reference, options, cores=1):
 
     with file_transaction(out_file) as tx_out_file:
         cmd = ("bwa mem -t {cores} {options} {index} {fastq} | samtools view "
-               "-ShuF4q2 - | samtools sort -o -H -m 8G - tmp > {result}"
+               "-ShuF4q2 - | samtools sort -o -m 8G - tmp > {result}"
               ).format(cores=cores,
                        options=opts,
                        index=reference,
