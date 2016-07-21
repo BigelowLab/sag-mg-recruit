@@ -601,7 +601,7 @@ def _match_len(md):
 
 def read_overlap_pctid(l, overlap, pctid):
     reallen = l.infer_query_length()
-    alnlen = l.query_length
+    alnlen = l.query_alignment_length
     mismatch = l.get_tag("NM")
     
     aln_overlap = alnlen/reallen * 100
@@ -623,7 +623,7 @@ def filter_bam(bam, outbam, overlap = 95, pctid = 95):
                 continue
 
             total += 1
-            #md = str(l).split("\t")[-1].split(",")[3].replace(")","").replace("'","").strip()  # get md value from raw bam entry
+            #md = l.get_tag("MD")
             #match = _match_len(md)
             #pct_match = (match)/l.rlen * 100
 
@@ -636,7 +636,7 @@ def filter_bam(bam, outbam, overlap = 95, pctid = 95):
 
         with open(outfile, "w") as oh:
             print(name, good, file=oh)
-        print("there were %s good read alignments out of %s total alignments" % (good, total))
+        logger.info("for %s, there were %s good read alignments out of %s total alignments" % (bam, good, total))
     return outbam
 
 
@@ -776,7 +776,7 @@ def print_real_cov(fastq, reference, outdir, pctid, overlap, cores, cleanup, pe=
     else:
         bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
 
-    bam = filter_bam(bam, bam.replace(".bam", ".{pctid}.bam".format(**locals())), overlap=overlap, pctid=pctid)
+    bam = filter_bam(bam, bam.replace(".bam", ".pctid{pctid}.overlap{overlap}.bam".format(**locals())), overlap=overlap, pctid=pctid)
 
     bed = get_coverage(bam)                         # create per base coverage table
     print("coverage_table_created, called:", bed)
@@ -958,7 +958,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     sagdir = safe_makedir(sagdir)
     covdir = op.join(outdir, 'coverage')
     covdir = safe_makedir(covdir)
-    summaryout = op.join(outdir, "summary_table_pctid{pctid}_minlen{minlen}.txt".format(**locals()))
+    summaryout = op.join(outdir, "summary_table_pctid{pctid}_minlen{minlen}_overlap{overlap}.txt".format(**locals()))
     
     logger.info("processing the metagenomes")
     tbl_name = op.join(mgdir, "multi_mg_qc_minlen{minlen}.txt".format(**locals()))
@@ -989,7 +989,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     
     saglist.append(sagconcat)    
     
-    coverage_out = op.join(covdir, "coverage_info_pctid{pctid}_minlen{minlen}.txt".format(**locals()))
+    coverage_out = op.join(covdir, "coverage_info_pctid{pctid}_minlen{minlen}_overlap{overlap}.txt".format(**locals()))
     if op.exists(coverage_out):
         covtbl = pd.read_csv(coverage_out, sep="\t")
         logger.info("bwa recruitment has already been done. loading {coverage_out}".format(**locals()))
