@@ -83,7 +83,7 @@ sag-mg-recruit --outdir <path to output dir> --cores 40 --minlen 100  --pctid 95
 The program will create a new output directory with three sub-directories:
 ```coverage```, ```mgs``` and ```sags``` which will contain various output files created during the recruitment process.  
 
-The final output table will be located in the main output directory, called "summary_table_pctidXX_minlenXX.txt".
+The final output table will be located in the main output directory, called "summary_table_pctidXX_minlenXX_overlapXX.txt".
 
 That table has one row per mg-sag pair with the following columns:
 - sag: SAG name
