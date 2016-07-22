@@ -97,4 +97,4 @@ Re-run with different minlen and pctid parameters:
 sag-mg-recruit --outdir /home/smroutput --cores 40 --minlen 100  --pctid 90 --log recruitment.log mgtbl.txt sagtbl.txt
 ```
 
-FLASH is the longest step, followed by initial bwa recruitment.  
+Note: one quirk of one of the dependencies (FLASH), if there are metagenomic reads that need to be joined, make sure the output directory is specificied as a relative path.  
