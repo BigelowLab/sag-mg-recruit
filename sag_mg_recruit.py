@@ -286,7 +286,7 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
     except IOError as e:
         raise IOError("input table not found")
 
-    df['name'] = [op.basename(i).split(".")[0] for i in df['mg_f']]
+    #df['name'] = [op.basename(i).split(".")[0] for i in df['mg_f']]
     mglist = list(df.mg_f[df['join']==False])
     
     # join reads identified as joined 
