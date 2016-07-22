@@ -30,6 +30,7 @@ Options:
 ```
 
 ```input_mg_table``` should be a csv file created using the mg_template.xlsx within the program directory.  The columns are:
+- name: desired name used to refer to each metagenome; any string without spaces, special characters or "."
 - mg_f: path to forward reads for metagenome
 - mg_r: path to reverse metagenomic reads (if there are none, put "None" in this column)
 - wgs_technology: specify whether the library was sequenced with either illumina (enter "illumina") or 454-pyrosequencing (enter "pyro")
