@@ -103,7 +103,7 @@ That table has one row per mg-sag pair with the following columns:
 
 #### Changing alignment parameters
 
-After you've run sag-mg-recruit, you can re-run the analysis with changed ```--pctid``` or ```--minlen``` parameters much more quickly than the original run by using the same input files, the same output file but only changing the ```--pctid``` and/or ```--minlen``` parameters. 
+After you've run sag-mg-recruit, you can re-run the analysis with changed ```--pctid```, ```--overlap```, or ```--minlen``` parameters much more quickly than the original run by using the same input files, the same output directory but changing the ```--pctid```, ```--overlap``` and/or ```--minlen``` parameters. 
 
 For example, say your first run was:
 
