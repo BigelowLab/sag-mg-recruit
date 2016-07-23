@@ -68,7 +68,7 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
 
     outsuffix = [".extendedFrags.fastq.gz", ".notCombined_1.fastq.gz", ".notCombined_2.fastq.gz", ".hist", ".histogram"]
     outfiles = [prefix+i for i in outsuffix]
-    for o in outfiles:
+    for o in [outfiles[0], outfiles[3], outfiles[4]]:
         if op.exists(o):
             exists = True
         else:
@@ -99,6 +99,10 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
         except:
             logger.error("join step could not be performed for {fastq1}".format(**locals()))
             return ["","","","","",""]
+        # delete uncombined reads to save space
+    for f in outfiles:
+        if "notCombined" in f:
+            os.remove(f)
     return outfiles
 
 
@@ -159,22 +163,28 @@ def read_count(fname):
         break
 
     if fname.endswith("gz"):
-        count_file = fname.rsplit(".gz", 1)[0] + ".count"
+        count_file = ".".join(fname.split(".")[:-2])+".count"
         cat = "gzip -d -c"
     else:
-        count_file = fname + ".count"
+        count_file = ".".join(fname.split(".")[:-1])+".count"
         cat = "cat"
+    
+    if op.exists(count_file):
+        total = int(open(count_file).read().rstrip())
+        return total
 
     if not fq:
-        cmd = '%s %s | grep -c "^>"' % (cat, count_file)
+        cmd = '%s %s | grep -c "^>"' % (cat, fname)
     else:
-        cmd = '%s %s | wc -l' % (cat, count_file)
+        cmd = '%s %s | wc -l' % (cat, fname)
 
     for line in run(cmd, description="Counting reads", iterable=True):
         total = int(line.rstrip())
         if fq:
             assert total % 4 == 0, "Multi-line or invalid FASTQ"
             total = int(total / 4)
+    with open(count_file, "w") as oh:
+        print(total, file=oh)
     return total
 
 
@@ -302,7 +312,7 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
         mglist.append(joinedfq)
     
     # size filter all reads:
-    processed_mgs = []
+    # processed_mgs = []
     read_counts = []
     nameorder = []
     
@@ -314,15 +324,16 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
         nameorder.append(op.basename(m).split(".")[0])
         newfilename = op.basename(m).replace(".fastq", ".minlen_%s.fastq" % minlen)
         outfile = op.join(outdir, newfilename)
-        new_out, count = read_size_filter(m, minlen, outfile, cores=threads)
-        processed_mgs.append(new_out)
+        # new_out, count = read_size_filter(m, minlen, outfile, cores=threads)
+        count = read_count(m)
+        # processed_mgs.append(new_out)
         read_counts.append(count)
     
     # create dataframe of results and merge with original info
-    data = {'name':nameorder, 'to_recruit': processed_mgs, 'read_count':read_counts}
+    data = {'name':nameorder, 'to_recruit': mglist, 'read_count':read_counts}
     newinfo = pd.DataFrame(data)
     res_table = pd.merge(df, newinfo, how='outer', on='name')
-    tbl_name = op.join(outdir, "multi_mg_qc_minlen{minlen}.txt".format(**locals()))
+    tbl_name = op.join(outdir, "multi_mg_qc.txt".format(**locals()))
     res_table.to_csv(tbl_name, sep="\t", index=False)
     return res_table
 
@@ -599,20 +610,20 @@ def _match_len(md):
     return length
 
 
-def read_overlap_pctid(l, overlap, pctid):
+def read_overlap_pctid(l, overlap, pctid, minlen):
     reallen = l.infer_query_length()
     alnlen = l.query_alignment_length
     mismatch = l.get_tag("NM")
     
     aln_overlap = alnlen/reallen * 100
     aln_pctid = (alnlen-mismatch)/alnlen * 100
-    if aln_overlap >= overlap and aln_pctid >= pctid:
+    if aln_overlap >= overlap and aln_pctid >= pctid and reallen >= minlen:
         return True
     else:
         return False
 
 
-def filter_bam(bam, outbam, overlap = 95, pctid = 95):
+def filter_bam(bam, outbam, overlap = 95, pctid = 95, minlen = 150):
     with pysam.AlignmentFile(bam, "rb", check_sq=False) as ih, pysam.AlignmentFile(outbam, "wb", template=ih) as oh:
         good = 0
         total = 0
@@ -630,7 +641,7 @@ def filter_bam(bam, outbam, overlap = 95, pctid = 95):
             #if pct_match > pctid:
             #    good += 1
             #    oh.write(l)
-            if read_overlap_pctid(l, overlap, pctid) == True:
+            if read_overlap_pctid(l, overlap, pctid, minlen) == True:
                 good += 1
                 oh.write(l)
 
@@ -750,7 +761,7 @@ def get_coverage(bam_file, bedout=None):
 
 ### calculate coverage:
 
-def print_real_cov(fastq, reference, outdir, pctid, overlap, cores, cleanup, pe=None):
+def print_real_cov(fastq, reference, outdir, pctid, overlap, minlen, cores, cleanup, pe=None):
     ''' calculate per-base coverage using bwa, samtools and bedtools
 
     Args:
@@ -776,7 +787,7 @@ def print_real_cov(fastq, reference, outdir, pctid, overlap, cores, cleanup, pe=
     else:
         bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
 
-    bam = filter_bam(bam, bam.replace(".bam", ".pctid{pctid}.overlap{overlap}.bam".format(**locals())), overlap=overlap, pctid=pctid)
+    bam = filter_bam(bam, bam.replace(".bam", ".pctid{pctid}.overlap{overlap}.bam".format(**locals())), overlap=overlap, pctid=pctid, minlen=minlen)
 
     bed = get_coverage(bam)                         # create per base coverage table
     print("coverage_table_created, called:", bed)
@@ -864,7 +875,7 @@ def genome_cov_table(gcov_list):
     return big
 
 
-def cov_from_list(fastqlist, referencelist, outdir, pctid, overlap, cores, outtable, cleanup=False):
+def cov_from_list(fastqlist, referencelist, outdir, pctid, overlap, minlen, cores, outtable, cleanup=False):
     '''create large datframe of recruitment information for multiple SAGs against multiple metagenomes
     Args:
         fastqlist(list): list of paths to metagenomic reads in fastq format
@@ -881,7 +892,7 @@ def cov_from_list(fastqlist, referencelist, outdir, pctid, overlap, cores, outta
     bedlist = []
     for f in fastqlist:
         for r in referencelist:
-            bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, overlap=overlap, cores=cores, cleanup=cleanup)
+            bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, overlap=overlap, minlen=minlen, cores=cores, cleanup=cleanup)
             bedlist.append(bed)
     table = genome_cov_table(bedlist)
     table.to_csv(outtable, sep="\t", index=False)
@@ -923,11 +934,11 @@ def concatenate_fastas(fastalist, outfasta):
               type=click.INT, 
               default=150, 
               help='for join step: maximum overlap for join step, default=150bp')
+# coverage options
 @click.option('--minlen', 
               type=click.INT, 
               default=150, 
-              help='for metagenomes: minimum read length, default=150bp')
-# coverage options
+              help='for alignment: minimum read length to include, default=150bp')
 @click.option('--pctid', 
               default=95, 
               help="for alignment: minimum percent identity to keep within overlapping region, default=95")
@@ -961,7 +972,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     summaryout = op.join(outdir, "summary_table_pctid{pctid}_minlen{minlen}_overlap{overlap}.txt".format(**locals()))
     
     logger.info("processing the metagenomes")
-    tbl_name = op.join(mgdir, "multi_mg_qc_minlen{minlen}.txt".format(**locals()))
+    tbl_name = op.join(mgdir, "multi_mg_qc.txt".format(**locals()))
     if op.exists(tbl_name):
         mgtbl = pd.read_csv(tbl_name, sep="\t")
         logger.info("Metagenomes have already been processed.  Loading {tbl_name}".format(**locals()))
@@ -994,7 +1005,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         covtbl = pd.read_csv(coverage_out, sep="\t")
         logger.info("bwa recruitment has already been done. loading {coverage_out}".format(**locals()))
     else:
-        covtbl = cov_from_list(mglist, saglist, covdir, pctid, overlap, cores, coverage_out, cleanup=True)
+        covtbl = cov_from_list(mglist, saglist, covdir, pctid, overlap, minlen, cores, coverage_out, cleanup=True)
 
     # process tables to make summary table
     logger.info('putting together summary tables')
