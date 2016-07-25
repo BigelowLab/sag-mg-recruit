@@ -99,7 +99,7 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
         except:
             logger.error("join step could not be performed for {fastq1}".format(**locals()))
             return ["","","","","",""]
-        # delete uncombined reads to save space
+    # delete uncombined reads to save space
     for f in outfiles:
         if "notCombined" in f:
             os.remove(f)
@@ -161,6 +161,9 @@ def read_count(fname):
         if not qual:
             fq = False
         break
+    if op.exists(fname) == False:
+        logger.error("could not find file: %s" % fname)
+        return 0
 
     if fname.endswith("gz"):
         count_file = ".".join(fname.split(".")[:-2])+".count"
@@ -295,9 +298,14 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
         df = pd.read_csv(intable)
     except IOError as e:
         raise IOError("input table not found")
-
-    #df['name'] = [op.basename(i).split(".")[0] for i in df['mg_f']]
-    mglist = list(df.mg_f[df['join']==False])
+    
+    to_recruit = []
+    for i, r in df.iterrows():
+        if r.join==True:
+            to_recruit.append(op.join(outdir, "%s.extendedFrags.fastq.gz" % r['name']))
+        elif r.join==False:
+            to_recruit.append(r.mg_f)
+    df['to_recruit'] = to_recruit
     
     # join reads identified as joined 
     tojoin = df.loc[df['join']==True]
@@ -309,33 +317,18 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
         #f = f.replace(wd, "./")
         #r = r.replace(wd, "./")
         joinedfq = join(n, f, fq2=r, threads=threads, mmd=mmd, mino=mino, maxo=maxo, outdir=outdir)
-        mglist.append(joinedfq)
     
     # size filter all reads:
     # processed_mgs = []
     read_counts = []
-    nameorder = []
-    
-    if len(mglist) == 0:
-        logger.error("no mgs created, pipeline aborted")
-        return pd.DataFrame()
-
-    for m in mglist:
-        nameorder.append(op.basename(m).split(".")[0])
-        newfilename = op.basename(m).replace(".fastq", ".minlen_%s.fastq" % minlen)
-        outfile = op.join(outdir, newfilename)
-        # new_out, count = read_size_filter(m, minlen, outfile, cores=threads)
+    for m in df['to_recruit']:
         count = read_count(m)
-        # processed_mgs.append(new_out)
         read_counts.append(count)
-    
-    # create dataframe of results and merge with original info
-    data = {'name':nameorder, 'to_recruit': mglist, 'read_count':read_counts}
-    newinfo = pd.DataFrame(data)
-    res_table = pd.merge(df, newinfo, how='outer', on='name')
+    df['read_count'] = read_counts
+    # create dataframe of results 
     tbl_name = op.join(outdir, "multi_mg_qc.txt".format(**locals()))
-    res_table.to_csv(tbl_name, sep="\t", index=False)
-    return res_table
+    df.to_csv(tbl_name, sep="\t", index=False)
+    return df
 
 
 # SAG functions
