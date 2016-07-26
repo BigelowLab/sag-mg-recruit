@@ -754,7 +754,7 @@ def get_coverage(bam_file, bedout=None):
 
 ### calculate coverage:
 
-def print_real_cov(fastq, reference, outdir, pctid, overlap, minlen, cores, cleanup, pe=None):
+def print_real_cov(fastq, reference, outdir, pctid, overlap, minlen, cores, cleanup, mgname=None, referencename=None, pe=None):
     ''' calculate per-base coverage using bwa, samtools and bedtools
 
     Args:
@@ -771,8 +771,16 @@ def print_real_cov(fastq, reference, outdir, pctid, overlap, minlen, cores, clea
     Returns:
         path to genome coverage file
     '''
-    fqpre = op.basename(fastq).split(".")[0]
-    ref_pre = op.basename(reference).split(".")[0]
+    if mgname is None:
+        fqpre = op.basename(fastq).split(".")[0]
+    else:
+        fqpre = mgname
+
+    if ref_pre is None:
+        ref_pre = op.basename(reference).split(".")[0]
+    else:
+        ref_pre = referencename
+
     outbam = op.join(os.path.abspath(outdir), fqpre+"_vs_"+ref_pre+".bam")
     
     if pe:
@@ -868,7 +876,7 @@ def genome_cov_table(gcov_list):
     return big
 
 
-def cov_from_list(fastqlist, referencelist, outdir, pctid, overlap, minlen, cores, outtable, cleanup=False):
+def cov_from_list(fastqlist, referencelist, mg_names, reference_names, outdir, pctid, overlap, minlen, cores, outtable, cleanup=False):
     '''create large datframe of recruitment information for multiple SAGs against multiple metagenomes
     Args:
         fastqlist(list): list of paths to metagenomic reads in fastq format
@@ -883,9 +891,15 @@ def cov_from_list(fastqlist, referencelist, outdir, pctid, overlap, minlen, core
         a pandas dataframe of the result table
     '''
     bedlist = []
-    for f in fastqlist:
-        for r in referencelist:
-            bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, overlap=overlap, minlen=minlen, cores=cores, cleanup=cleanup)
+    if mg_names is None:
+        mg_names = [i.split(".")[0] for i in fastqlist]
+
+    if reference_names is None:
+        reference_names = [i.split(".")[0] for i in refrencelist]
+
+    for fn, f in zip(mg_names, fastqlist):
+        for rn, r in zip(reference_names, referencelist):
+            bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, overlap=overlap, minlen=minlen, cores=cores, cleanup=cleanup, mgname=fn, referencename=rn)
             bedlist.append(bed)
     table = genome_cov_table(bedlist)
     table.to_csv(outtable, sep="\t", index=False)
@@ -973,6 +987,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         mgtbl = process_multi_mgs(input_mg_table, mgdir, threads=cores, mmd=mmd, mino=mino, maxo=maxo, minlen=minlen)
     
     mglist = mgtbl['to_recruit']
+    mgnames = mgtbl['names']
     
     logger.info("processing sag table")
     saglist = process_gb_sags(input_sag_table, sagdir)
@@ -998,7 +1013,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         covtbl = pd.read_csv(coverage_out, sep="\t")
         logger.info("bwa recruitment has already been done. loading {coverage_out}".format(**locals()))
     else:
-        covtbl = cov_from_list(mglist, saglist, covdir, pctid, overlap, minlen, cores, coverage_out, cleanup=True)
+        covtbl = cov_from_list(mglist, saglist, mgnames, None, covdir, pctid, overlap, minlen, cores, coverage_out, cleanup=True)
 
     # process tables to make summary table
     logger.info('putting together summary tables')
