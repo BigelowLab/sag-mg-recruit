@@ -80,7 +80,6 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
         return outfiles
 
     print("FASTQ1 for FLASH is:", fastq1)
-    #with file_transaction(outfiles) as tx:
     with file_transaction(outfiles) as tx_outfiles:
         if fastq2 is None:
             logger.info("only one fastq file provided, assuming it is interleaved", file=sys.stderr)
@@ -603,14 +602,14 @@ def _match_len(md):
     return length
 
 
-def read_overlap_pctid(l, overlap, pctid, minlen):
+def read_overlap_pctid(l, overlap = 0, pctid, minlen):
     reallen = l.infer_query_length()
     alnlen = l.query_alignment_length
     mismatch = l.get_tag("NM")
     
     aln_overlap = alnlen/reallen * 100
     aln_pctid = (alnlen-mismatch)/alnlen * 100
-    if aln_overlap >= overlap and aln_pctid >= pctid and reallen >= minlen:
+    if aln_overlap >= overlap and aln_pctid >= pctid and alnlen >= minlen:
         return True
     else:
         return False
@@ -906,9 +905,8 @@ def cov_from_list(fastqlist, referencelist, mg_names, reference_names, outdir, p
             
     table = genome_cov_table(bedlist)
     table.to_csv(outtable, sep="\t", index=False)
-    return table
     print("result table written to {outfile}".format(outfile=outtable))
-
+    return table
 
 def concatenate_fastas(fastalist, outfasta):
     with open(outfasta, "w") as oh:
@@ -948,13 +946,13 @@ def concatenate_fastas(fastalist, outfasta):
 @click.option('--minlen', 
               type=click.INT, 
               default=150, 
-              help='for alignment: minimum read length to include, default=150bp')
+              help='for alignment: minimum alignment length to include, default=150bp')
 @click.option('--pctid', 
               default=95, 
               help="for alignment: minimum percent identity to keep within overlapping region, default=95")
 @click.option('--overlap',
-              default=95, 
-              help="for alignment: percent read that must overlap with reference sequence to keep, default=95")
+              default=0, 
+              help="for alignment: percent read that must overlap with reference sequence to keep, default=0")
 @click.option('--log', 
               default=None, 
               help='name of log file, else, log sent to standard out')
