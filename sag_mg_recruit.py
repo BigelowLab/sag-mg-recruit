@@ -776,13 +776,14 @@ def print_real_cov(fastq, reference, outdir, pctid, overlap, minlen, cores, clea
     else:
         fqpre = mgname
 
-    if ref_pre is None:
+    if referencename is None:
         ref_pre = op.basename(reference).split(".")[0]
     else:
         ref_pre = referencename
 
     outbam = op.join(os.path.abspath(outdir), fqpre+"_vs_"+ref_pre+".bam")
-    
+    print(outbam)
+
     if pe:
         bam = bwa_mem(fastq, outbam, reference, options='-p', cores=cores)
     else:
@@ -891,16 +892,18 @@ def cov_from_list(fastqlist, referencelist, mg_names, reference_names, outdir, p
         a pandas dataframe of the result table
     '''
     bedlist = []
+
     if mg_names is None:
-        mg_names = [i.split(".")[0] for i in fastqlist]
+        mg_names = [op.basename(i).split(".")[0] for i in fastqlist]
 
     if reference_names is None:
-        reference_names = [i.split(".")[0] for i in refrencelist]
+        reference_names = [op.basename(i).split(".")[0] for i in referencelist]
 
     for fn, f in zip(mg_names, fastqlist):
         for rn, r in zip(reference_names, referencelist):
             bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, overlap=overlap, minlen=minlen, cores=cores, cleanup=cleanup, mgname=fn, referencename=rn)
             bedlist.append(bed)
+            
     table = genome_cov_table(bedlist)
     table.to_csv(outtable, sep="\t", index=False)
     return table
@@ -987,7 +990,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         mgtbl = process_multi_mgs(input_mg_table, mgdir, threads=cores, mmd=mmd, mino=mino, maxo=maxo, minlen=minlen)
     
     mglist = mgtbl['to_recruit']
-    mgnames = mgtbl['names']
+    mgnames = mgtbl['name']
     
     logger.info("processing sag table")
     saglist = process_gb_sags(input_sag_table, sagdir)
