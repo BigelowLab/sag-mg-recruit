@@ -602,7 +602,7 @@ def _match_len(md):
     return length
 
 
-def read_overlap_pctid(l, overlap = 0, pctid, minlen):
+def read_overlap_pctid(l, pctid, minlen, overlap = 0):
     reallen = l.infer_query_length()
     alnlen = l.query_alignment_length
     mismatch = l.get_tag("NM")
