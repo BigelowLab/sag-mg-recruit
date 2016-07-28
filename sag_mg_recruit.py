@@ -82,7 +82,7 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
     print("FASTQ1 for FLASH is:", fastq1)
     with file_transaction(outfiles) as tx_outfiles:
         if fastq2 is None:
-            logger.info("only one fastq file provided, assuming it is interleaved", file=sys.stderr)
+            logger.info("only one fastq file provided, assuming it is interleaved")
             cmd = ("flash --interleaved-input -x {mismatch} -m {min} "
                    "-M {max} -t {threads} -z -o {prefix} {fastq1}").format(mismatch=mismatch_density,
                         min=min_overlap, max=max_overlap, threads=cores, prefix=prefix,
