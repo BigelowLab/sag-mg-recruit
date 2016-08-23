@@ -1,5 +1,5 @@
 '''
-Determine representation of SAGs within metagenomes 
+Determine representation of SAGs within metagenomes
 
 read recruitment of metagenomes to SAGs using bwa.
 '''
@@ -25,7 +25,9 @@ import matplotlib.pyplot as plt
 from distutils.spawn import find_executable
 
 
+# importing star is typically frowned upon. that scilifelab genologics package has lead you astray!
 from scgc.utils import *
+# you're using pysam, so it may be easier to just swipe that method
 from scgc.fastx import readfx
 
 
@@ -86,7 +88,7 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
             cmd = ("flash --interleaved-input -x {mismatch} -m {min} "
                    "-M {max} -t {threads} -z -o {prefix} {fastq1}").format(mismatch=mismatch_density,
                         min=min_overlap, max=max_overlap, threads=cores, prefix=prefix,
-                        fastq1=fastq1)            
+                        fastq1=fastq1)
         else:
             cmd = ("flash -m {min} -M {max} -x {mismatch} -t {threads} "
            "-z -o {prefix} {fastq1} {fastq2}".format(mismatch=mismatch_density,
@@ -96,7 +98,7 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
         try:
             run(cmd, description="Joining reads with flash")
         except:
-            logger.error("join step could not be performed for {fastq1}".format(**locals()))
+            logger.error("join step could not be performed for {fastq1}".format(fastq1=fastq1)
             return ["","","","","",""]
     # delete uncombined reads to save space
     for f in outfiles:
@@ -105,21 +107,26 @@ def run_flash(prefix, fastq1, fastq2=None, mismatch_density=0.05, min_overlap=35
     return outfiles
 
 
-def join_stats(inhist, fastq1, fastq2=None, prefix = "", outdir=""):
+def join_stats(inhist, fastq1, fastq2=None, prefix="", outdir=""):
     '''
     Print join stats and png of read size distribution
+
     Args:
         inhist (str): path to .hist output created by flash
-        prefix (str): location to write output to, defaults to current directory 
-    Output:
-        joined read size distribution plot as png
-        joined read stats as a tab-separated text file
-    '''
-    name = os.path.basename(inhist).replace(".hist","")
+        fastq1
+        fastq2
+        prefix (str): location to write output to, defaults to current directory
+        outdir
 
-    outname = os.path.join(outdir, "{prefix}_joinstats.txt".format(**locals()))
-    png_name = os.path.join(outdir, "{prefix}_joinstats.png".format(**locals()))
-    
+    Returns:
+        list of [str, str] which are joined read size distribution plot as png
+        and joined read stats as a tab-separated text file
+    '''
+    name = os.path.basename(inhist).replace(".hist", "")
+
+    outname = os.path.join(outdir, "{prefix}_joinstats.txt".format(prefix=prefix)
+    png_name = os.path.join(outdir, "{prefix}_joinstats.png".format(prefix=prefix)
+
     hist1 = pd.read_table(inhist, header=None)
     hist1.columns = ["length", "read_count"]
     fig = plt.plot(hist1['length'], hist1['read_count'], color='b')
@@ -128,11 +135,11 @@ def join_stats(inhist, fastq1, fastq2=None, prefix = "", outdir=""):
     plt.savefig(png_name)
 
     joined_pairs = hist1.read_count.sum()
-    total_bp = (hist1.length*hist1.read_count).sum()
-    mean_len = total_bp/joined_pairs
-    
+    total_bp = (hist1.length * hist1.read_count).sum()
+    mean_len = total_bp / joined_pairs
+
     if fastq2 is None:
-        original_count = read_count(fastq1)/2
+        original_count = read_count(fastq1) / 2
     else:
         original_count = read_count(fastq1)
 
@@ -170,7 +177,7 @@ def read_count(fname):
     else:
         count_file = ".".join(fname.split(".")[:-1])+".count"
         cat = "cat"
-    
+
     if op.exists(count_file):
         total = int(open(count_file).read().rstrip())
         return total
@@ -190,16 +197,16 @@ def read_count(fname):
     return total
 
 
-def read_size_filter(fastx, readsize, outfile, cores=1):
+def read_size_filter(fastx, read_size, outfile, cores=1):
     '''Read size filter
 
     Args:
         fastx (str): path to input fastq file
-        readsize (int): minimum read size to keep
+        read_size (int): minimum read size to keep
         outfile (str): location of outfile
-    outputs:
-        new fastq/fasta file with filtered reads
 
+    Returns:
+        List of [str, int]. FASTQ file path of output and total passing reads.
     '''
     if not outfile.endswith('.gz'):
         out = outfile
@@ -208,28 +215,30 @@ def read_size_filter(fastx, readsize, outfile, cores=1):
         out=outfile.replace('.gz', "")
 
     if os.path.exists(outfile):
-        passedreads = 0
+        passed_reads = 0
         for n, s, q in readfx(outfile):
-            passedreads += 1
-        print("read filter output already found, {passedreads} are present in the filtered file".format(**locals()))
-        return outfile, passedreads
+            passed_reads += 1
+        print("read filter output already found, {passed_reads} are present in the filtered file".format(passed_reads=passed_reads)
+        return outfile, passed_reads
 
     with open(out, "w") as oh:
-        totalreads = 0
-        passedreads = 0
+        total_reads = 0
+        passed_reads = 0
         for n, s, q in readfx(fastx):
-            totalreads += 1
-            if len(s) >= readsize:
-                passedreads += 1
+            total_reads += 1
+            if len(s) >= read_size:
+                passed_reads += 1
                 if "fastq" in outfile:
                     print("@"+n, s, "+",q, sep="\n", file=oh)
                 else:
                     print(">"+n, s, sep="\n", file=oh)
-    logger.info("for {fastx}, {passedreads} out of {totalreads} passed the length filter."
-                "printing to {outfile}".format(**locals()))
+    logger.info(("for {fastx}, {passed_reads} out of {total_reads} passed the length filter. "
+                 "printing to {outfile}").format(fastx=fastx,
+                                                 passed_reads=passed_reads,
+                                                 total_reads=total_reads,
+                                                 outfile=outfile))
     outfile = pigz_file(out, cores)
-    return outfile, passedreads
-
+    return outfile, passed_reads
 
 
 def compare_read_counts(joined_pairs, original_count):
@@ -238,18 +247,22 @@ def compare_read_counts(joined_pairs, original_count):
     Args:
         joined_pairs (int): the output of join_stats
         original_fastq (str): path to the original fastq file
+
+    Returns:
+        str
     '''
     difference = original_count - joined_pairs
-    if difference > original_count/2:
+    if difference > original_count / 2:
         logger.warning("ALERT! Joined library is less than half the size of original library.")
         #return False
     #else:
     #    return True
-    return "there were {original_count} read pairs and {joined_pairs} joined reads".format(**locals())
+    return "there were {original_count} read pairs and {joined_pairs} joined reads".format(original_count=original_count, joined_pairs=joined_pairs)
 
 
 def join(prefix, fq1, fq2=None, mmd=.05, mino=35, maxo=350, threads=20, outdir=""):
     '''Join metagenomic reads using flash
+
     Args:
         prefix (str): path with prefix included for location of output files
         fq1 (str): path to input fastq file, if interleaved, that's all you need, if separate forward and reverse include fq2
@@ -259,8 +272,9 @@ def join(prefix, fq1, fq2=None, mmd=.05, mino=35, maxo=350, threads=20, outdir="
         maxo (int): maximum bp overlap
         threads (int): number of threads
         outdir (str): output directory path
-    Output:
-        joined read files, and statistics file of joined read process.
+
+    Returns:
+        doesn't this return just one file (str)? joined read files, and statistics file of joined read process.
     '''
     outpath = os.path.join(outdir, prefix)
     outfiles = run_flash(outpath, fq1, fastq2=fq2, mismatch_density=mmd, min_overlap=mino,
@@ -275,7 +289,7 @@ def join(prefix, fq1, fq2=None, mmd=.05, mino=35, maxo=350, threads=20, outdir="
 
 def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
     '''Join and length filter a list of mg reads based on template from ../data/mg_template.csv
-    
+
     Joins reads calling flash
 
     Args:
@@ -287,58 +301,73 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
         threads (int): number of threads to run on
         outdir (str): desired directory for output files
         minlen (str): minimum read length to keep
+
     Returns:
-        directory of result files, output table with number of reads and path to new input files added
+        pandas.DataFrame - output table with number of reads
     '''
     if op.exists(outdir) == False:
         safe_makedir(outdir)
-    
+
     try:
+        # this will already raise an OSError
         df = pd.read_csv(intable)
     except IOError as e:
         raise IOError("input table not found")
-    
+
     to_recruit = []
     for i, r in df.iterrows():
-        if r.join==True:
+        if r.join:
+            # there's a mix of op and os.path calls
             to_recruit.append(op.join(outdir, "%s.extendedFrags.fastq.gz" % r['name']))
-        elif r.join==False:
+        else:
             to_recruit.append(r.mg_f)
     df['to_recruit'] = to_recruit
-    
-    # join reads identified as joined 
+
+    # join reads identified as joined
+    # there's a mix of to_recruit and tojoin without the underscore. def go with the underscore!
     tojoin = df.loc[df['join']==True]
-    
+
     for n, f, r in zip(tojoin['name'], tojoin['mg_f'], tojoin['mg_r']):
-        if pd.isnull(r) or r == "None":  # if reverse read cell is blank, but join=True, reads assumed to be interleaved
-            r=None
+        # if reverse read cell is blank, but join=True, reads assumed to be interleaved
+        if pd.isnull(r) or r is "None":
+            # isn't r already None?
+            r = None
         #wd = os.getcwd()
         #f = f.replace(wd, "./")
         #r = r.replace(wd, "./")
         joinedfq = join(n, f, fq2=r, threads=threads, mmd=mmd, mino=mino, maxo=maxo, outdir=outdir)
-    
+
     # size filter all reads:
     # processed_mgs = []
     read_counts = []
     for m in df['to_recruit']:
+        # when it's possible to easily read what's happening
+        # always try to minimize the total number of variables when they aren't
+        # used multiple times
         count = read_count(m)
         read_counts.append(count)
+        # becomes...
+        # read_counts.append(read_count(m))
     df['read_count'] = read_counts
-    # create dataframe of results 
-    tbl_name = op.join(outdir, "multi_mg_qc.txt".format(**locals()))
-    df.to_csv(tbl_name, sep="\t", index=False)
+    # becomes...
+    # df['read_count'] = [read_count(m) for m in df['to_recruit']]
+    # or
+    # df['read_count'] = df['to_recruit'].apply(read_count) or maybe it's df['to_recruit'].apply(lambda x: read_count(x))
+    # create dataframe of results
+    df.to_csv(op.join(outdir, "multi_mg_qc.txt"), sep="\t", index=False)
     return df
 
 
 # SAG functions
 def mask_sag(input_gb, out_fasta):
     '''output masked contigs with rRNA changed to 'N's
+
     Args:
         input_gb (str): path to annotated input genbank formatted genome
         out_fasta (str): where to write the output fasta to
+
     Returns:
-        fasta file with rRNA regions masked with 'N's
-        out_fasta (str)
+        str - fasta file with rRNA regions masked with 'N's
     '''
     #if input_gb.endswith(".gb") == False or input_gb.endswith(".gbk") == False:
     #    logger.error("input file does not appear to be in genbank format.  Please check.")
@@ -353,52 +382,55 @@ def mask_sag(input_gb, out_fasta):
             masked = ""
             for f in r.features:
                 if f.type == "rRNA" or f.type == "RNA":
-                    if ('gene' in f.qualifiers and 
-                       ("16S" in str(f.qualifiers['gene']).upper() or 
-                        "23S" in str(f.qualifiers['gene']).upper() or 
-                        "Subunit Ribosomal RNA".upper() in str(f.qualifiers['gene']).upper() or
-                        "suRNA".upper() in str(f.qualifiers['gene']).upper())):
-                            cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
-                            logger.info('rRNA gene found on contig %s' % r.name)
-                            rrna_count += 1      
-                    elif ('product' in f.qualifiers and 
-                         ("16S" in str(f.qualifiers['product']).upper() or 
-                        "23S" in str(f.qualifiers['product']).upper() or 
-                        "Subunit Ribosomal RNA".upper() in str(f.qualifiers['product']).upper() or
-                        "suRNA".upper() in str(f.qualifiers['product']).upper())):
+                    if ('gene' in f.qualifiers and
+                            ("16S" in str(f.qualifiers['gene']).upper() or
+                            "23S" in str(f.qualifiers['gene']).upper() or
+                            "Subunit Ribosomal RNA".upper() in str(f.qualifiers['gene']).upper() or
+                            "suRNA".upper() in str(f.qualifiers['gene']).upper())):
+                        # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
+                        cloc.append(f.location)
+                        logger.info('rRNA gene found on contig %s' % r.name)
+                        rrna_count += 1
+                    elif ('product' in f.qualifiers and
+                            ("16S" in str(f.qualifiers['product']).upper() or
+                            "23S" in str(f.qualifiers['product']).upper() or
+                            "Subunit Ribosomal RNA".upper() in str(f.qualifiers['product']).upper() or
+                            "suRNA".upper() in str(f.qualifiers['product']).upper())):
                         #print(f)
-                            cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
-                            logger.info('rRNA gene found on contig %s' % r.name)
-                            rrna_count += 1
+                        # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
+                        cloc.append(f.location)
+                        logger.info('rRNA gene found on contig %s' % r.name)
+                        rrna_count += 1
                     #else:
+                        # maybe logger.debug here?
                         #print(f)
 
             # if the contig contains one rRNA gene (most common if rRNA present)
             if len(cloc) == 1:
-                masked += s[0:cloc[0].start-1]
+                masked += s[0:cloc[0].start - 1]
                 masked += 'N'*(cloc[0].end - cloc[0].start)
-                masked += s[cloc[0].end-1:]
+                masked += s[cloc[0].end - 1:]
             # probably won't be instances where below is true
             elif len(cloc) > 1:
                 for i in range(0, len(cloc)):
                     # if it's the first entry
                     if i == 0:
-                        masked += s[0:cloc[i].start-1]
+                        masked += s[0:cloc[i].start - 1]
                         masked += 'N'*(cloc[i].end - cloc[i].start)
                     # if it's the last entry
-                    elif i == len(cloc)-1:
-                        masked += s[cloc[i-1].end-1:cloc[i].start-1]
+                    elif i == len(cloc) - 1:
+                        masked += s[cloc[i - 1].end - 1:cloc[i].start - 1]
                         masked += 'N'*(cloc[i].end - cloc[i].start)
                         masked += s[cloc[i].end:]
                     else:
-                        masked += s[cloc[i-1].end-1:cloc[i].start-1]
+                        masked += s[cloc[i - 1].end -1 :cloc[i].start - 1]
                         masked += 'N'*(cloc[i].end - cloc[i].start)
             # if no rRNA on contig, just return the sequence, unmasked
             else:
                 masked = s
 
             for i in range(0, len(masked), 80):
-                print(masked[i:i+80], file=oh)
+                print(masked[i:i + 80], file=oh)
     logger.info('%s rRNA genes found in %s' % (rrna_count, op.basename(input_gb)))
     return out_fasta
 
@@ -408,18 +440,16 @@ def gbk_to_fasta(input_gb, out_fasta):
         for r in SeqIO.parse(input_handle, "genbank"):
             print(">", r.name, sep="", file=oh)
             print(r.seq, file=oh)
-        return out_fasta
+    return out_fasta
 
 
 def process_gb_sags(tbl, outdir):
     '''process SAGs according to intsructions in input table
+
     Args:
         tbl (str): path to input table with the following columns:
-            sag_name: any string with no spaces or '.'
-            fasta_file: None if sag should be masked, otherwise path to input fasta to be processed
-            gbk_file: path to SAG's annotated gbk file
-            mask: boolean indicating whether the SAG should have the 16/23S sequences masked (TRUE) or not (FALSE)
         outdir (str): path to output directory.  does not have to exists before running function.
+
     Returns:
         list of re-named SAGs in fasta format, with 16/23S masked by 'N's if mask == True
     '''
@@ -427,72 +457,79 @@ def process_gb_sags(tbl, outdir):
         safe_makedir(outdir)
 
     try:
+        # another one where this will already raise something reasonable for you
         df = pd.read_csv(tbl)
     except:
         raise IOError("input table not found")
-    
+
     fas_sags = []
 
     for i, l in df.iterrows():
         if l['mask'] == True:
             if l.gbk_file is not None and op.exists(l.gbk_file):
-                outfasta = op.join(outdir, l.sag_name+".masked.fasta")
+                outfasta = op.join(outdir, l.sag_name + ".masked.fasta")
                 fas_sags.append(mask_sag(l.gbk_file, outfasta))
+                # is this intended to be saved or logged?
                 print(l.sag_name, "masked", sep=" ")
             else:
                 logger.error("could not find input genbank file to mask")
-        elif l['mask'] == False:        # if mask not designated, write sag to fasta if gbk supplied, else use supplied fasta
-            out_fasta = op.join(outdir, l.sag_name+".fasta")
+        # if mask not designated, write sag to fasta if gbk supplied, else use supplied fasta
+        elif l['mask'] == False:
+            out_fasta = op.join(outdir, l.sag_name + ".fasta")
             if l.fasta_file is None:
                 fas_sags.append(gbk_to_fasta(l.gbk_file, out_fasta))
             else:
-                shutil.copyfile(l.fasta_file, out_fasta) 
+                shutil.copyfile(l.fasta_file, out_fasta)
             fas_sags.append(out_fasta)
     return fas_sags
 
 
-def sag_checkm_completeness(fasta,  cores):
+def sag_checkm_completeness(fasta, cores):
     '''run checkm lineage_wf on SAG to get completeness values
 
     Args:
         fasta (str): full path to SAG genomic contigs in fasta format
         cores (int): number of cores to use to run checkm
+
     Returns:
         "completeness" statistics as a pandas dataframe
     '''
     logger.info("Running checkm on %s " % fasta)
 
     fasta = op.abspath(fasta)
-    if op.isdir == True or op.exists == False:
+
+    # what's this supposed to do?
+    if op.isdir or op.exists:
         return None
-    
+
     with tmp_dir() as tdir:
         bindir = op.join(tdir, "bindir")
         safe_makedir(bindir)
         outdir = op.join(tdir, "outdir")
         safe_makedir(outdir)
-        
+
         tmp_fasta = op.join(bindir, op.basename(fasta))
-        
+
         try:
             shutil.copy(fasta, tmp_fasta)
             assert op.exists(tmp_fasta)
+            # logger.debug?
             print(tmp_fasta, "created")
         except Exception, e:
+            # logger.warn
             print("copying %s to the temporary directory failed, %s" % (fasta, e))
             return None
 
         logger.info("Running lineage workflow on %s" % fasta)
-        
+
         completeness_tsv = op.join(outdir, "completeness.tsv")
-        
+
         cmd = "checkm lineage_wf -f {outfile} --tab_table -q -x fasta -t {cores} {binpath} {outdir}".format(outfile=completeness_tsv, outdir=outdir, cores=cores, binpath=bindir)
-        
-        logger.info("running checkm lineage, command is: {cmd}".format(**locals()))
+
+        logger.info("running checkm lineage, command is: {cmd}".format(cmd=cmd))
         run(cmd)
         completeness = pd.read_csv(completeness_tsv, sep="\t", header=0)
     return completeness
-    
 
 
 def checkm_completeness(saglist, outfile, cores):
@@ -501,6 +538,7 @@ def checkm_completeness(saglist, outfile, cores):
     Args:
         sagfile (str): path to file containing a list of paths, one per line, of SAG fasta files to analyze
         outfile (str): path to location where output table will be written
+
     Returns:
         tab-delimited file of checkm completeness per SAG
     '''
@@ -525,7 +563,7 @@ def checkm_completeness(saglist, outfile, cores):
 
         completeness['total_bp'] = length
         # completeness['calculated_length'] = int(completeness.total_bp * 100/completeness.Completeness)
-        
+
         df = pd.concat([df, completeness])
 
     df.to_csv(outfile, sep="\t")
@@ -606,7 +644,7 @@ def read_overlap_pctid(l, pctid, minlen, overlap = 0):
     reallen = l.infer_query_length()
     alnlen = l.query_alignment_length
     mismatch = l.get_tag("NM")
-    
+
     aln_overlap = alnlen/reallen * 100
     aln_pctid = (alnlen-mismatch)/alnlen * 100
     if aln_overlap >= overlap and aln_pctid >= pctid and alnlen >= minlen:
@@ -693,15 +731,15 @@ def bwa_mem(fastq, out_file, reference, options, cores=1):
     if file_exists(out_file):
         return out_file
     predefined_options = [('-t', False)]
-    
+
     if options is not None:
         options = filter_options(options, predefined_options)
         opts = " ".join(options)
     else:
         opts = ""
-    
+
     logger.info("Mapping %s to %s using bwa mem" % (fastq, reference))
-    
+
     reference = bwa_index(reference)
 
     with file_transaction(out_file) as tx_out_file:
@@ -737,12 +775,12 @@ def file_exists(fnames):
 def get_coverage(bam_file, bedout=None):
     '''
     create per base coverage patterns from sorted bam
-    ''' 
+    '''
     bedgraph = ""
     filename, ext = op.splitext(bam_file)
     if bedout is None:
         bedout = filename + ".genomecoverage"
-    
+
     if op.exists(bedout):
         return bedout
 
@@ -761,7 +799,7 @@ def print_real_cov(fastq, reference, outdir, pctid, overlap, minlen, cores, clea
         reference (path): input reference genome in fasta format
         outdir (path): path to output directory
         pctid (int): minimum percent identity for aligned reads
-        cores (int): number of cores to run on 
+        cores (int): number of cores to run on
         cleanup (boolean): if True, delete .bam and .bai files after coverage is calculated
         pe: intput True if reads are paird and interleaved
     Outputs:
@@ -786,13 +824,13 @@ def print_real_cov(fastq, reference, outdir, pctid, overlap, minlen, cores, clea
     if pe:
         bam = bwa_mem(fastq, outbam, reference, options='-p', cores=cores)
     else:
-        bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem 
+        bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)             # run bwa mem
 
     bam = filter_bam(bam, bam.replace(".bam", ".pctid{pctid}.overlap{overlap}.bam".format(**locals())), overlap=overlap, pctid=pctid, minlen=minlen)
 
     bed = get_coverage(bam)                         # create per base coverage table
     print("coverage_table_created, called:", bed)
-    
+
     if cleanup:
         idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
         for f in idx_files+[bam, bam+".bai"]:
@@ -813,7 +851,7 @@ def get_recruit_info(gcov):
     countfile = gcov.replace("genomecoverage", "aln_count")
     with open(countfile) as infile:
         recruit_count = infile.read().split()[1].strip()
-        
+
     metagenome = op.basename(gcov).split("_vs_")[0]
     sag = op.basename(gcov).split("_vs_")[1].split(".")[0]
     try:
@@ -842,14 +880,14 @@ def get_recruit_info(gcov):
 
     cols = ['sag',
             'metagenome',
-            'Percent_scaffolds_with_any_coverage', 
-            'Percent_of_reference_bases_covered', 
-            'Average_coverage', 
+            'Percent_scaffolds_with_any_coverage',
+            'Percent_of_reference_bases_covered',
+            'Average_coverage',
             'total_reads_recruited']
-    data = [sag, 
-           metagenome, 
+    data = [sag,
+           metagenome,
            pct_scaffolds_covered,
-           pct_covered, 
+           pct_covered,
            mean_sag_coverage,
            recruit_count]
     df = pd.DataFrame(data, index=cols).transpose()
@@ -865,9 +903,9 @@ def genome_cov_table(gcov_list):
     '''
     cols = ['sag',
             'metagenome',
-            'Percent_scaffolds_with_any_coverage', 
-            'Percent_of_reference_bases_covered', 
-            'Average_coverage', 
+            'Percent_scaffolds_with_any_coverage',
+            'Percent_of_reference_bases_covered',
+            'Average_coverage',
             'total_reads_recruited']
     big = pd.DataFrame(columns=cols)
     for g in gcov_list:
@@ -902,7 +940,7 @@ def cov_from_list(fastqlist, referencelist, mg_names, reference_names, outdir, p
         for rn, r in zip(reference_names, referencelist):
             bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, overlap=overlap, minlen=minlen, cores=cores, cleanup=cleanup, mgname=fn, referencename=rn)
             bedlist.append(bed)
-            
+
     table = genome_cov_table(bedlist)
     table.to_csv(outtable, sep="\t", index=False)
     print("result table written to {outfile}".format(outfile=outtable))
@@ -923,40 +961,40 @@ def concatenate_fastas(fastalist, outfasta):
 @click.argument('input_mg_table')
 @click.argument('input_sag_table')
 # global options
-@click.option('--outdir', 
-              default=None, 
+@click.option('--outdir',
+              default=None,
               help='directory location to place output files')
-@click.option('--cores', 
-              default=8, 
+@click.option('--cores',
+              default=8,
               help='number of cores to run on, default=8')
 # mg processing options
-@click.option('--mmd', 
-              type=click.FLOAT, 
-              default=0.05, 
+@click.option('--mmd',
+              type=click.FLOAT,
+              default=0.05,
               help='for join step: mismatch density for join step in mg processing, default=0.05')
-@click.option('--mino', 
-              type=click.INT, 
-              default=35, 
+@click.option('--mino',
+              type=click.INT,
+              default=35,
               help='for join step: minimum overlap for join step, default=35bp')
-@click.option('--maxo', 
-              type=click.INT, 
-              default=150, 
+@click.option('--maxo',
+              type=click.INT,
+              default=150,
               help='for join step: maximum overlap for join step, default=150bp')
 # coverage options
-@click.option('--minlen', 
-              type=click.INT, 
-              default=150, 
+@click.option('--minlen',
+              type=click.INT,
+              default=150,
               help='for alignment: minimum alignment length to include, default=150bp')
-@click.option('--pctid', 
-              default=95, 
+@click.option('--pctid',
+              default=95,
               help="for alignment: minimum percent identity to keep within overlapping region, default=95")
 @click.option('--overlap',
-              default=0, 
+              default=0,
               help="for alignment: percent read that must overlap with reference sequence to keep, default=0")
-@click.option('--log', 
-              default=None, 
+@click.option('--log',
+              default=None,
               help='name of log file, else, log sent to standard out')
-def main(input_mg_table, input_sag_table, outdir, cores, 
+def main(input_mg_table, input_sag_table, outdir, cores,
          mmd, mino, maxo, minlen, pctid, overlap, log):
     if log is None:
         log = logging.StreamHandler(sys.stdout)
@@ -964,7 +1002,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         logger.addHandler(log)
     else:
         logging.basicConfig(filename=log, level=logging.INFO)
-    
+
     check_dependencies(REQUIRES)
 
     if outdir is None:
@@ -978,7 +1016,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     covdir = op.join(outdir, 'coverage')
     covdir = safe_makedir(covdir)
     summaryout = op.join(outdir, "summary_table_pctid{pctid}_minlen{minlen}_overlap{overlap}.txt".format(**locals()))
-    
+
     logger.info("processing the metagenomes")
     tbl_name = op.join(mgdir, "multi_mg_qc.txt".format(**locals()))
     if op.exists(tbl_name):
@@ -986,29 +1024,29 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         logger.info("Metagenomes have already been processed.  Loading {tbl_name}".format(**locals()))
     else:
         mgtbl = process_multi_mgs(input_mg_table, mgdir, threads=cores, mmd=mmd, mino=mino, maxo=maxo, minlen=minlen)
-    
+
     mglist = mgtbl['to_recruit']
     mgnames = mgtbl['name']
-    
+
     logger.info("processing sag table")
     saglist = process_gb_sags(input_sag_table, sagdir)
     logger.info("calculating SAG completeness using CheckM")
     completeness_out = op.join(sagdir, "sag_completeness.txt".format(**locals()))
-    
+
     if op.exists(completeness_out):
         sagtbl = pd.read_csv(completeness_out, sep="\t")
         logger.info("SAGs have already been processed.  Loading {completeness_out}".format(**locals()))
     else:
         sagtbl = checkm_completeness(saglist, completeness_out, cores)
-    
+
     logger.info("running bwa read recruitment")
-    
+
     sagconcat = op.join(sagdir, "concatenated_sags.fasta")
     if op.exists(sagconcat) == False:
-        sagconcat = concatenate_fastas(saglist, sagconcat)    
-    
-    saglist.append(sagconcat)    
-    
+        sagconcat = concatenate_fastas(saglist, sagconcat)
+
+    saglist.append(sagconcat)
+
     coverage_out = op.join(covdir, "coverage_info_pctid{pctid}_minlen{minlen}_overlap{overlap}.txt".format(**locals()))
     if op.exists(coverage_out):
         covtbl = pd.read_csv(coverage_out, sep="\t")
@@ -1020,25 +1058,25 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     logger.info('putting together summary tables')
     #sagtbl['sag'] = [i.split("_")[0] for i in sagtbl['Bin Id']]
     sagtbl['sag'] = [i.split(".")[0] for i in sagtbl['Bin Id']]
-    sagtbl.rename(columns={'Completeness':'sag_completeness', 
-                           'total_bp':'sag_total_bp' 
-                           }, 
+    sagtbl.rename(columns={'Completeness':'sag_completeness',
+                           'total_bp':'sag_total_bp'
+                           },
                            inplace=True)
     sagshort = sagtbl[['sag', 'sag_completeness', 'sag_total_bp']]
 
-    mgtbl.rename(columns={'name':'metagenome', 
-                          'wgs_technology':'mg_wgs_technology', 
-                          'read_count':'mg_read_count'}, 
+    mgtbl.rename(columns={'name':'metagenome',
+                          'wgs_technology':'mg_wgs_technology',
+                          'read_count':'mg_read_count'},
                           inplace=True)
     mgshort = mgtbl[['metagenome', 'mg_wgs_technology', 'mg_read_count']]
-    
+
     covtbl['sag'] = [i.split(".")[0] for i in covtbl['sag']]
 
     summary = covtbl.merge(mgshort, how='outer', on='metagenome')
     summary = summary.merge(sagshort, how='outer', on='sag')
-    
-    summary[['sag_total_bp', 'total_reads_recruited', 'mg_read_count']] = summary[['sag_total_bp', 'total_reads_recruited', 'mg_read_count']].convert_objects(convert_numeric=True) 
-    
+
+    summary[['sag_total_bp', 'total_reads_recruited', 'mg_read_count']] = summary[['sag_total_bp', 'total_reads_recruited', 'mg_read_count']].convert_objects(convert_numeric=True)
+
     try:
         summary['sag_size_mbp'] = summary.sag_total_bp/1000000
         summary['reads_per_mbp'] = summary.total_reads_recruited/summary.sag_size_mbp
@@ -1047,7 +1085,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     except Exception as inst:
         logger.warning(type(inst))     # the exception instance
         logger.warning(inst.args)      # arguments stored in .args
-        logger.warning(inst)     
+        logger.warning(inst)
         logger.warning("the three final values in the summary table were unable to be calculated.")
         summary['reads_per_mbp'] = "NA"
         summary['prop_mgreads_per_mbp'] = "NA"
@@ -1055,7 +1093,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
 
         #summary['prop_mg_recruited'] = "NA"
         #summary['prop_mg_adjusted'] = "NA"
-    
+
     summary.to_csv(summaryout, sep="\t", index=False)
 
     logger.info('process completed.')
@@ -1064,4 +1102,3 @@ def main(input_mg_table, input_sag_table, outdir, cores,
 
 if __name__=='__main__':
     main()
-
