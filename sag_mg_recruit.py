@@ -459,7 +459,7 @@ def process_gb_sags(tbl, outdir):
             if l.gbk_file is not None and op.exists(l.gbk_file):
                 outfasta = op.join(outdir, l.sag_name + ".masked.fasta")
                 fas_sags.append(mask_sag(l.gbk_file, outfasta))
-                logger.info(l.sag_name, "masked", sep=" ")
+                logger.info("{} masked".format(l.sag_name))
             else:
                 logger.error("could not find input genbank file to mask")
         # if mask not designated, write sag to fasta if gbk supplied, else use supplied fasta
@@ -814,7 +814,7 @@ def print_real_cov(fastq, reference, outdir, pctid, overlap, minlen, cores, clea
 
     if cleanup:
         idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
-         for f in idx_files + [bam, bam + ".bai"]:
+        for f in idx_files + [bam, bam + ".bai"]:
             if op.exists(f):
                 os.remove(f)
     return bed
