@@ -24,7 +24,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from distutils.spawn import find_executable
 
-from scgc.utils import file_transaction, safe_makedir, run, tmp_dir, pigz_file, 
+from scgc.utils import file_transaction, safe_makedir, run, tmp_dir, pigz_file
 
 
 __version_info__ = (0, 0, 0)
@@ -33,7 +33,7 @@ REQUIRES = ["bedtools", "samtools", "checkm", "bwa", "gzip", "gunzip"]
 
 
 logger = logging.getLogger(__name__)
-wgs_factors = {'illumina':0.8376, 'pyro':1}
+# wgs_factors = {'illumina':0.8376, 'pyro':1}
 gzopen = lambda i: gzip.open(i) if i.endswith(".gz") else open(i)
 
 
@@ -367,7 +367,9 @@ def mask_sag(input_gb, out_fasta):
     #if input_gb.endswith(".gb") == False or input_gb.endswith(".gbk") == False:
     #    logger.error("input file does not appear to be in genbank format.  Please check.")
     #    return None
-
+    if op.exists(out_fasta):
+        return out_fasta
+        logger.info("masked fasta for {} already exists".format(input_gb))
     with open(input_gb, "rU") as input_handle, open(out_fasta, "w") as oh:
         rrna_count = 0
         for r in SeqIO.parse(input_handle, "genbank"):
@@ -391,7 +393,6 @@ def mask_sag(input_gb, out_fasta):
                             "23S" in str(f.qualifiers['product']).upper() or
                             "Subunit Ribosomal RNA".upper() in str(f.qualifiers['product']).upper() or
                             "suRNA".upper() in str(f.qualifiers['product']).upper())):
-                        #print(f)
                         # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
                         cloc.append(f.location)
                         logger.info('rRNA gene found on contig %s' % r.name)
@@ -452,14 +453,13 @@ def process_gb_sags(tbl, outdir):
     safe_makedir(outdir)
 
     fas_sags = []
-
+    df = pd.read_csv(tbl)
     for i, l in df.iterrows():
         if l['mask'] == True:
             if l.gbk_file is not None and op.exists(l.gbk_file):
                 outfasta = op.join(outdir, l.sag_name + ".masked.fasta")
                 fas_sags.append(mask_sag(l.gbk_file, outfasta))
-                # is this intended to be saved or logged?
-                print(l.sag_name, "masked", sep=" ")
+                logger.info(l.sag_name, "masked", sep=" ")
             else:
                 logger.error("could not find input genbank file to mask")
         # if mask not designated, write sag to fasta if gbk supplied, else use supplied fasta
@@ -625,10 +625,13 @@ def read_overlap_pctid(l, pctid, min_len, overlap=0):
 
     aln_overlap = (aln_len / real_len) * 100
     aln_pctid = ((aln_len - mismatch) / aln_len) * 100
-    return aln_overlap >= overlap and aln_pctid >= pctid and aln_len >= min_len
+    if aln_overlap >= overlap and aln_pctid >= pctid and aln_len >= min_len:
+        return True
+    else:
+        return False
 
 
-def filter_bam(bam, outbam, overlap=95, pctid=95, minlen=150):
+def filter_bam(bam, outbam, overlap=0, pctid=95, minlen=150):
     with pysam.AlignmentFile(bam, "rb", check_sq=False) as ih, pysam.AlignmentFile(outbam, "wb", template=ih) as oh:
         good = 0
         total = 0
@@ -803,16 +806,15 @@ def print_real_cov(fastq, reference, outdir, pctid, overlap, minlen, cores, clea
         bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)
 
     bam = filter_bam(bam,
-                     bam.replace(".bam", ".pctid{pctid}.overlap{overlap}.bam".format(pctid=pctid, overlap=overlap)),
-                     overlap=overlap, pctid=pctid, minlen=minlen)
+                     bam.replace(".bam", ".pctid{pctid}.overlap{overlap}.minlen{minlen}.bam".format(pctid=pctid, 
+                        overlap=overlap, minlen=minlen)), overlap=overlap, pctid=pctid, minlen=minlen)
     # create per base coverage table
     bed = get_coverage(bam)
-    # log
-    # print("coverage_table_created, called:", bed)
+    logger.info("coverage_table_created, called:{}".format(bed))
 
     if cleanup:
         idx_files = [reference + x for x in ['.amb', '.ann', '.bwt', '.pac', '.sa']]
-        for f in idx_files + [bam, bam + ".bai"]:
+         for f in idx_files + [bam, bam + ".bai"]:
             if op.exists(f):
                 os.remove(f)
     return bed
@@ -1039,11 +1041,10 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         covtbl = pd.read_csv(coverage_out, sep="\t")
         logger.info("bwa recruitment has already been done. loading {}".format(coverage_out))
     else:
-        covtbl = cov_from_list(mglist, saglist, mgnames, None, covdir, pctid, overlap, minlen, cores, coverage_out, cleanup=True)
+        covtbl = cov_from_list(mglist, saglist, mgnames, None, covdir, pctid, overlap, minlen, cores, coverage_out, cleanup=False)
 
     # process tables to make summary table
     logger.info('putting together summary tables')
-    # sagtbl['sag'] = [i.split("_")[0] for i in sagtbl['Bin Id']]
     sagtbl['sag'] = [i.split(".")[0] for i in sagtbl['Bin Id']]
     sagtbl.rename(columns={'Completeness': 'sag_completeness',
                            'total_bp': 'sag_total_bp'},
