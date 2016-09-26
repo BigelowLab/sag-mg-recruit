@@ -499,8 +499,6 @@ def sag_checkm_completeness(fasta, cores):
         assert op.exists(tmp_fasta)
         logger.debug("{} created".format(tmp_fasta))
 
-        logger.info("Running lineage workflow on %s" % fasta)
-
         completeness_tsv = op.join(outdir, "completeness.tsv")
 
         cmd = "checkm lineage_wf -f {outfile} --tab_table -q -x fasta -t {cores} {binpath} {outdir}".format(outfile=completeness_tsv, outdir=outdir, cores=cores, binpath=bindir)
@@ -522,14 +520,14 @@ def checkm_completeness(saglist, outfile, cores):
     Returns:
         tab-delimited file of checkm completeness per SAG
     '''
-    logger.info("gathering checkM completeness values for all SAGs listed in file: saglist")
+    logger.info("gathering checkM completeness values for all SAGs listed in file: {}".format(saglist))
     df = pd.DataFrame(columns=['Bin Id', 'Marker lineage', '# genomes', '# marker sets', '0', '1', '2', '3', '4', '5+', 'Completeness', 'Contamination', 'Strain heterogeneity', 'total_bp'])
 
     for s in saglist:
-        if op.exists == False:
+        if not op.exists:
             logger.error("SAG not found for %s" % s)
             continue
-        if op.isfile == False:
+        if not op.isfile:
             logger.error("%s is not a file" % s)
             continue
         completeness = sag_checkm_completeness(s, cores=cores)
@@ -993,6 +991,19 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         logging.basicConfig(filename=log, level=logging.INFO)
 
     check_dependencies(REQUIRES)
+    parms = print("PARAMETERS for sag-mg-recruit:",
+                  "input_mg_table = {}".format(input_mg_table),
+                  "input_sag_table = {}".format(intput_sag_table),
+                  "outdir = {}".format(outdir),
+                  "cores = {}".format(cores),
+                  "mmd = {}".format(mmd),
+                  "mino = {}".format(mino),
+                  "maxo = {}".format(maxo),
+                  "minlen = {}".format(minlen),
+                  "pctid = {}".format(pctid),
+                  "overlap = {}".format(overlap),
+                  "log = {}".format(log), sep="\n")
+    logger.info(parms)
 
     if outdir is None:
         outdir = "mg_sag_recruitment"
