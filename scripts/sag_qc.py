@@ -137,17 +137,20 @@ def count_fasta_bp(sagfasta):
 
 def mask_sag(input_gb, out_fasta):
     '''output masked contigs with rRNA changed to 'N's
+
     Args:
         input_gb (str): path to annotated input genbank formatted genome
         out_fasta (str): where to write the output fasta to
+
     Returns:
-        fasta file with rRNA regions masked with 'N's
-        out_fasta (str)
+        str - fasta file with rRNA regions masked with 'N's
     '''
     #if input_gb.endswith(".gb") == False or input_gb.endswith(".gbk") == False:
     #    logger.error("input file does not appear to be in genbank format.  Please check.")
     #    return None
-
+    if op.exists(out_fasta):
+        return out_fasta
+        logger.info("masked fasta for {} already exists".format(input_gb))
     with open(input_gb, "rU") as input_handle, open(out_fasta, "w") as oh:
         rrna_count = 0
         for r in SeqIO.parse(input_handle, "genbank"):
@@ -157,48 +160,55 @@ def mask_sag(input_gb, out_fasta):
             masked = ""
             for f in r.features:
                 if f.type == "rRNA" or f.type == "RNA":
-                    if ('gene' in f.qualifiers and 
-                       ("16S" in str(f.qualifiers['gene']).upper() or 
-                        "23S" in str(f.qualifiers['gene']).upper())):
-                            cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
-                            logger.info('rRNA gene found on contig %s' % r.name)
-                            rrna_count += 1      
-                    elif ('product' in f.qualifiers and 
-                         ("16S" in str(f.qualifiers['product']).upper() or 
-                        "23S" in str(f.qualifiers['product']).upper())):
-                        #print(f)
-                            cloc.append(f.location)    # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
-                            logger.info('rRNA gene found on contig %s' % r.name)
-                            rrna_count += 1
-                    #else:
-                        #print(f)
+                    if ('gene' in f.qualifiers and
+                            ("16S" in str(f.qualifiers['gene']).upper() or
+                            "23S" in str(f.qualifiers['gene']).upper() or
+                            "Subunit Ribosomal RNA".upper() in str(f.qualifiers['gene']).upper() or
+                            "suRNA".upper() in str(f.qualifiers['gene']).upper())):
+                        # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
+                        cloc.append(f.location)
+                        logger.info('rRNA gene found on contig %s' % r.name)
+                        rrna_count += 1
+                    elif ('product' in f.qualifiers and
+                            ("16S" in str(f.qualifiers['product']).upper() or
+                            "23S" in str(f.qualifiers['product']).upper() or
+                            "Subunit Ribosomal RNA".upper() in str(f.qualifiers['product']).upper() or
+                            "suRNA".upper() in str(f.qualifiers['product']).upper())):
+                        # if the 'type' is rRNA, it should be masked... don't have to check for 16 or 23S
+                        cloc.append(f.location)
+                        logger.info('rRNA gene found on contig %s' % r.name)
+                        rrna_count += 1
+                        
 
             # if the contig contains one rRNA gene (most common if rRNA present)
             if len(cloc) == 1:
-                masked += s[0:cloc[0].start-1]
+                logger.debug("contig {name} has 1 rRNA gene".format(name=r.name))
+                masked += s[0:cloc[0].start - 1]
                 masked += 'N'*(cloc[0].end - cloc[0].start)
-                masked += s[cloc[0].end-1:]
-            # probably won't be instances where below is true
+                masked += s[cloc[0].end - 1:]
+
             elif len(cloc) > 1:
+                logger.debug("contig {name} has more {num} rRNA genes".format(name=r.name, num=len(cloc)))
                 for i in range(0, len(cloc)):
                     # if it's the first entry
                     if i == 0:
-                        masked += s[0:cloc[i].start-1]
+                        masked += s[0:cloc[i].start - 1]
                         masked += 'N'*(cloc[i].end - cloc[i].start)
                     # if it's the last entry
-                    elif i == len(cloc)-1:
-                        masked += s[cloc[i-1].end-1:cloc[i].start-1]
+                    elif i == len(cloc) - 1:
+                        masked += s[cloc[i - 1].end - 1:cloc[i].start - 1]
                         masked += 'N'*(cloc[i].end - cloc[i].start)
                         masked += s[cloc[i].end:]
                     else:
-                        masked += s[cloc[i-1].end-1:cloc[i].start-1]
+                        masked += s[cloc[i - 1].end -1 :cloc[i].start - 1]
                         masked += 'N'*(cloc[i].end - cloc[i].start)
             # if no rRNA on contig, just return the sequence, unmasked
             else:
+                logger.debug("contig {name} does not have any annotated rRNA genes".format(name=r.name))
                 masked = s
 
             for i in range(0, len(masked), 80):
-                print(masked[i:i+80], file=oh)
+                print(masked[i:i + 80], file=oh)
     logger.info('%s rRNA genes found in %s' % (rrna_count, op.basename(input_gb)))
     return out_fasta
 
