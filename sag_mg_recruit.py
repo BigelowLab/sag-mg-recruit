@@ -993,7 +993,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     check_dependencies(REQUIRES)
     parms = print("PARAMETERS for sag-mg-recruit:",
                   "input_mg_table = {}".format(input_mg_table),
-                  "input_sag_table = {}".format(intput_sag_table),
+                  "input_sag_table = {}".format(input_sag_table),
                   "outdir = {}".format(outdir),
                   "cores = {}".format(cores),
                   "mmd = {}".format(mmd),
