@@ -721,7 +721,7 @@ def bwa_mem(fastq, out_file, reference, options, cores=1):
 
     with file_transaction(out_file) as tx_out_file:
         cmd = ("bwa mem -t {cores} {options} {index} {fastq} | samtools view "
-               "-ShuF4q2 - | samtools sort -o -m 8G - tmp > {result}"
+               "-ShuF4q2 -@ {cores} - | samtools sort -m 8G -@ {cores} -o {result}"
               ).format(cores=cores,
                        options=opts,
                        index=reference,

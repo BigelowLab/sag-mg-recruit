@@ -296,7 +296,7 @@ def completeness(sagfile, outfile, cores, log):
 @click.option('--log', default=None, help='name of logfile')
 def run_mask_sag(input_gb, out_fasta, log):
     if log == None:
-        log = "mask_%s.log" % "_".join(input_gb.split(".")[:-1])
+        log = "mask.log"
         print("Logfile is: %s" % log)
     logging.basicConfig(filename=log, level=logging.DEBUG)
     if out_fasta == None:
