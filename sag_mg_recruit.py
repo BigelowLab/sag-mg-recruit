@@ -163,7 +163,7 @@ def join_stats(inhist, fastq1, fastq2=None, prefix="", outdir=""):
     return joined_pairs, original_count
 
 
-def read_count(fname):
+def read_count(fname, minlen=0):
     """Count the number of reads and write metadata .count file.
 
     Args:
@@ -183,26 +183,22 @@ def read_count(fname):
         return 0
 
     if fname.endswith("gz"):
-        count_file = ".".join(fname.split(".")[:-2])+".count"
+        count_file = "{0}_minlen{1}.count".format(".".join(fname.split(".")[:-2]), minlen)
         cat = "gzip -d -c"
     else:
-        count_file = ".".join(fname.split(".")[:-1])+".count"
+        count_file = "{0}_minlen{1}.count".format(".".join(fname.split(".")[:-1]), minlen)
         cat = "cat"
 
     if op.exists(count_file):
         total = int(open(count_file).read().rstrip())
         return total
 
-    if not fq:
-        cmd = '%s %s | grep -c "^>"' % (cat, fname)
-    else:
-        cmd = '%s %s | wc -l' % (cat, fname)
+    for name, seq, qual in readfx(fname):
+        if len(seq) >= minlen:
+            total += 1
+        else:
+            continue
 
-    for line in run(cmd, description="Counting reads", iterable=True):
-        total = int(line.rstrip())
-        if fq:
-            assert total % 4 == 0, "Multi-line or invalid FASTQ"
-            total = int(total / 4)
     with open(count_file, "w") as oh:
         print(total, file=oh)
     return total
@@ -345,11 +341,12 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
     
     read_counts = []
 
-    df['read_count'] = [read_count(m) for m in df['to_recruit']]
+    df['read_count'] = [read_count(m, minlen) for m in df['to_recruit']]
     # or
     # df['read_count'] = df['to_recruit'].apply(read_count) or maybe it's df['to_recruit'].apply(lambda x: read_count(x))
     # create dataframe of results
-    df.to_csv(op.join(outdir, "multi_mg_qc.txt"), sep="\t", index=False)
+
+    df.to_csv(op.join(outdir, "multi_mg_qc_minlen{}.txt".format(minlen)), sep="\t", index=False)
     return df
 
 
@@ -953,23 +950,23 @@ def concatenate_fastas(fastalist, outfasta):
               type=click.FLOAT,
               default=0.05,
               show_default=True,
-              help='for join step: mismatch density for join step in mg processing')
+              help='for join step: mismatch density')
 @click.option('--mino',
               type=click.INT,
               default=35,
               show_default=True,
-              help='for join step: minimum overlap for join step')
+              help='for join step: minimum overlap')
 @click.option('--maxo',
               type=click.INT,
               default=150,
               show_default=True,
-              help='for join step: maximum overlap for join step')
+              help='for join step: maximum overlap')
 # coverage options
 @click.option('--minlen',
               type=click.INT,
               default=150,
               show_default=True,
-              help='for alignment: minimum alignment length to include')
+              help='for alignment and mg read count: minimum alignment length to include; minimum read size to include')
 @click.option('--pctid',
               default=95,
               show_default=True,
@@ -991,7 +988,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         logging.basicConfig(filename=log, level=logging.INFO)
 
     check_dependencies(REQUIRES)
-    parms = print("PARAMETERS for sag-mg-recruit:",
+    parms = str(print("PARAMETERS for sag-mg-recruit:",
                   "input_mg_table = {}".format(input_mg_table),
                   "input_sag_table = {}".format(input_sag_table),
                   "outdir = {}".format(outdir),
@@ -1002,7 +999,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
                   "minlen = {}".format(minlen),
                   "pctid = {}".format(pctid),
                   "overlap = {}".format(overlap),
-                  "log = {}".format(log), sep="\n")
+                  "log = {}".format(log), sep="\n"))
     logger.info(parms)
 
     if outdir is None:
@@ -1018,7 +1015,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     summaryout = op.join(outdir, "summary_table_pctid{pctid}_minlen{minlen}_overlap{overlap}.txt".format(pctid=pctid, minlen=minlen, overlap=overlap))
 
     logger.info("processing the metagenomes")
-    tbl_name = op.join(mgdir, "multi_mg_qc.txt")
+    tbl_name = op.join(mgdir, "multi_mg_qc_minlen{}.txt".format(minlen))
     if op.exists(tbl_name):
         mgtbl = pd.read_csv(tbl_name, sep="\t")
         logger.info("Metagenomes have already been processed.  Loading {}".format(tbl_name))
