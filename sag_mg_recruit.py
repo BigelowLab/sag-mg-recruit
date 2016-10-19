@@ -339,8 +339,6 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
         joined_fq = join(n, f, fq2=r, threads=threads, mmd=mmd, mino=mino, maxo=maxo, outdir=outdir)
         logger.info("reads joined for {}".format(n))
     
-    read_counts = []
-
     df['read_count'] = [read_count(m, minlen) for m in df['to_recruit']]
     # or
     # df['read_count'] = df['to_recruit'].apply(read_count) or maybe it's df['to_recruit'].apply(lambda x: read_count(x))
