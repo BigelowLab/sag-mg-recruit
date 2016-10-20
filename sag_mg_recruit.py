@@ -150,9 +150,9 @@ def join_stats(inhist, fastq1, fastq2=None, prefix="", outdir=""):
     mean_len = total_bp / joined_pairs
 
     if fastq2 is None:
-        original_count = read_count(fastq1) / 2
+        original_count = read_count(fastq1, outdir)[0] / 2
     else:
-        original_count = read_count(fastq1)
+        original_count = read_count(fastq1, outdir)[0]
 
     with open(outname, "w") as oh:
         print("metagenome", name, sep="\t", file=oh)
@@ -163,7 +163,7 @@ def join_stats(inhist, fastq1, fastq2=None, prefix="", outdir=""):
     return joined_pairs, original_count
 
 
-def read_count(fname, minlen=0):
+def read_count(fname, directory, minlen=0):
     """Count the number of reads and write metadata .count file.
 
     Args:
@@ -172,7 +172,8 @@ def read_count(fname, minlen=0):
     Returns:
         read_count (int): integer of number of reads within fasta/fastq file
     """
-    total = 0
+    total_reads = 0
+    total_bp = 0
     fq = True
     for name, seq, qual in readfx(fname):
         if not qual:
@@ -183,25 +184,24 @@ def read_count(fname, minlen=0):
         return 0
 
     if fname.endswith("gz"):
-        count_file = "{0}_minlen{1}.count".format(".".join(fname.split(".")[:-2]), minlen)
-        cat = "gzip -d -c"
+        count_file = op.join(directory, "{0}_minlen{1}.count".format(".".join(op.basename(fname).split(".")[:-2]), minlen))
     else:
-        count_file = "{0}_minlen{1}.count".format(".".join(fname.split(".")[:-1]), minlen)
-        cat = "cat"
+        count_file = op.join(directory, "{0}_minlen{1}.count".format(".".join(op.basename(fname).split(".")[:-1]), minlen))
 
     if op.exists(count_file):
-        total = int(open(count_file).read().rstrip())
-        return total
+        total_reads, total_bp = open(count_file).read().split("\n")[0:2]
+        return total_reads, total_bp
 
     for name, seq, qual in readfx(fname):
         if len(seq) >= minlen:
-            total += 1
+            total_reads += 1
+            total_bp += len(seq)
         else:
             continue
 
     with open(count_file, "w") as oh:
-        print(total, file=oh)
-    return total
+        print(total_reads, total_bp, file=oh, sep="\n")
+    return total_reads, total_bp
 
 
 def read_size_filter(fastx, read_size, outfile, cores=1):
@@ -259,8 +259,8 @@ def compare_read_counts(joined_pairs, original_count):
     Returns:
         str
     '''
-    difference = original_count - joined_pairs
-    if difference > original_count / 2:
+    difference = int(original_count) - joined_pairs
+    if difference > int(original_count) / 2:
         logger.warning("ALERT! Joined library is less than half the size of original library.")
     else:
         logger.debug("number of joined reads is greater than half the size of the original library")
@@ -312,9 +312,12 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
     Returns:
         pandas.DataFrame - output table with number of reads
     '''
+    if op.exists(op.join(outdir, "multi_mg_qc_minlen{}.txt".format(minlen))):
+        return pd.read_csv(op.join(outdir, "multi_mg_qc_minlen{}.txt".format(minlen)))
+
     if op.exists(outdir) == False:
         safe_makedir(outdir)
-
+    
     
     df = pd.read_csv(intable)
     
@@ -339,7 +342,13 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
         joined_fq = join(n, f, fq2=r, threads=threads, mmd=mmd, mino=mino, maxo=maxo, outdir=outdir)
         logger.info("reads joined for {}".format(n))
     
-    df['read_count'] = [read_count(m, minlen) for m in df['to_recruit']]
+    total_counts = [read_count(m, outdir, 0) for m in df['to_recruit']]
+    df['total_reads_before_filter'] = [c[0] for c in total_counts]
+    df['total_bp_before_filter'] = [c[1] for c in total_counts]
+    
+    len_counts = [read_count(m, outdir, minlen) for m in df['to_recruit']]
+    df['read_count'] = [c[0] for c in len_counts]
+    df['bp_count'] = [c[1] for c in len_counts]
     # or
     # df['read_count'] = df['to_recruit'].apply(read_count) or maybe it's df['to_recruit'].apply(lambda x: read_count(x))
     # create dataframe of results
@@ -627,6 +636,7 @@ def read_overlap_pctid(l, pctid, min_len, overlap=0):
 def filter_bam(bam, outbam, pctid=95, minlen=150, overlap=0,):
     with pysam.AlignmentFile(bam, "rb", check_sq=False) as ih, pysam.AlignmentFile(outbam, "wb", template=ih) as oh:
         good = 0
+        good_bp = 0
         total = 0
         name = op.basename(outbam).split(".")[0]
         outfile = ".".join(outbam.split(".")[:-1]) + ".aln_count"
@@ -644,10 +654,11 @@ def filter_bam(bam, outbam, pctid=95, minlen=150, overlap=0,):
             #    oh.write(l)
             if read_overlap_pctid(l, pctid, minlen, overlap):
                 good += 1
+                good_bp += l.query_alignment_length
                 oh.write(l)
 
         with open(outfile, "w") as oh:
-            print(name, good, file=oh)
+            print(good, good_bp, sep="\n", file=oh)
         logger.info("for %s, there were %s good read alignments out of %s total alignments" % (bam, good, total))
     return outbam
 
@@ -826,7 +837,8 @@ def get_recruit_info(gcov):
     '''
     countfile = gcov.replace("genomecoverage", "aln_count")
     with open(countfile) as infile:
-        recruit_count = infile.read().split()[1].strip()
+        recruit_count, recruit_bp = infile.read().split("\n")[0:2]
+        #recruit_count = infile.read().split()[1].strip()
 
     metagenome = op.basename(gcov).split("_vs_")[0]
     sag = op.basename(gcov).split("_vs_")[1].split(".")[0]
@@ -835,7 +847,8 @@ def get_recruit_info(gcov):
             'Percent_scaffolds_with_any_coverage',
             'Percent_of_reference_bases_covered',
             'Average_coverage',
-            'total_reads_recruited']
+            'total_reads_recruited',
+            'total_bp_recruited']
 
     try:
         coverage = pd.read_csv(gcov, sep="\t", header=None)
@@ -861,7 +874,8 @@ def get_recruit_info(gcov):
            pct_scaffolds_covered,
            pct_covered,
            mean_sag_coverage,
-           recruit_count]
+           recruit_count,
+           recruit_bp]
     return pd.DataFrame(data, index=cols).transpose()
     
 
@@ -880,7 +894,8 @@ def genome_cov_table(gcov_list):
             'Percent_scaffolds_with_any_coverage',
             'Percent_of_reference_bases_covered',
             'Average_coverage',
-            'total_reads_recruited']
+            'total_reads_recruited',
+            'total_bp_recruited']
     big = pd.DataFrame(columns=cols)
     for g in gcov_list:
         new = get_recruit_info(g)
@@ -1059,9 +1074,9 @@ def main(input_mg_table, input_sag_table, outdir, cores,
 
     mgtbl.rename(columns={'name': 'metagenome',
                           'wgs_technology': 'mg_wgs_technology',
-                          'read_count': 'mg_read_count'},
+                          'read_count': 'mg_read_count', 'bp_count':'mg_bp_count'},
                  inplace=True)
-    mgshort = mgtbl[['metagenome', 'mg_wgs_technology', 'mg_read_count']]
+    mgshort = mgtbl[['metagenome', 'mg_wgs_technology', 'mg_read_count', 'mg_bp_count']]
 
     covtbl['sag'] = [i.split(".")[0] for i in covtbl['sag']]
 
@@ -1070,18 +1085,12 @@ def main(input_mg_table, input_sag_table, outdir, cores,
 
     summary[['sag_total_bp', 'total_reads_recruited', 'mg_read_count']] = summary[['sag_total_bp', 'total_reads_recruited', 'mg_read_count']].convert_objects(convert_numeric=True)
 
-    try:
-        summary['sag_size_mbp'] = summary.sag_total_bp / 1000000
-        summary['reads_per_mbp'] = summary.total_reads_recruited / summary.sag_size_mbp
-        summary['prop_mgreads_per_mbp'] = summary.reads_per_mbp / summary.mg_read_count
-        #summary['prop_mg_adjusted'] = summary['prop_mg_recruited']*summary['mg_wgs_technology'].map(wgs_factors)
-    # specific error
-    except Exception as inst:
-        # the exception instance
-        logger.warning("the three final values in the summary table were unable to be calculated.")
-        summary['reads_per_mbp'] = "NA"
-        summary['prop_mgreads_per_mbp'] = "NA"
-        summary['sag_size_mbp'] = 'NA'
+
+    summary['sag_size_mbp'] = summary.sag_total_bp / 1000000
+    summary['MG_reads_per_SAG_mbp'] = summary.total_reads_recruited / summary.sag_size_mbp
+    summary['MG_bp_per_SAG_mpb'] = summary.total_bp_recruited / summary.sag_size_mbp
+    summary['prop_total_MG_reads_recruited_per_SAG_mbp'] = summary.MG_reads_per_SAG_mbp / summary.mg_read_count
+    summary['prop_total_MG_bp_recruited_per_SAG_mbp'] = summary.MG_bp_per_SAG_mpb / summary.mg_bp_count
 
 
     summary.to_csv(summaryout, sep="\t", index=False)
