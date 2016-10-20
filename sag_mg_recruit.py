@@ -624,7 +624,7 @@ def read_overlap_pctid(l, pctid, min_len, overlap=0):
         return False
 
 
-def filter_bam(bam, outbam, overlap=0, pctid=95, minlen=150):
+def filter_bam(bam, outbam, pctid=95, minlen=150, overlap=0,):
     with pysam.AlignmentFile(bam, "rb", check_sq=False) as ih, pysam.AlignmentFile(outbam, "wb", template=ih) as oh:
         good = 0
         total = 0
@@ -642,7 +642,7 @@ def filter_bam(bam, outbam, overlap=0, pctid=95, minlen=150):
             #if pct_match > pctid:
             #    good += 1
             #    oh.write(l)
-            if read_overlap_pctid(l, overlap, pctid, minlen):
+            if read_overlap_pctid(l, pctid, minlen, overlap):
                 good += 1
                 oh.write(l)
 
