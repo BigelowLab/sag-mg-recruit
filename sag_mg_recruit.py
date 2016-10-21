@@ -854,7 +854,7 @@ def get_recruit_info(gcov):
         coverage = pd.read_csv(gcov, sep="\t", header=None)
     except:
         logger.warning("no genome coverage data for {sag}-{metagenome} recruitment".format(sag=sag, metagenome=metagenome))
-        data = [sag, metagenome, 0, 0, 0, 0]
+        data = [sag, metagenome, 0, 0, 0, 0, 0]
         return pd.DataFrame(data, index=cols).transpose()
     
     mean_per_contig = coverage.groupby([0])[2].mean()
