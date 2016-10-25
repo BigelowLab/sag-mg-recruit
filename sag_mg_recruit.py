@@ -1083,7 +1083,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     summary = covtbl.merge(mgshort, how='outer', on='metagenome')
     summary = summary.merge(sagshort, how='outer', on='sag')
 
-    summary[['sag_total_bp', 'total_reads_recruited', 'mg_read_count', 'mg_bp_count']] = summary[['sag_total_bp', 'total_reads_recruited', 'mg_read_count', 'mg_bp_count']].convert_objects(convert_numeric=True)
+    summary[['sag_total_bp', 'total_reads_recruited', 'total_bp_recruited', 'mg_read_count', 'mg_bp_count']] = summary[['sag_total_bp', 'total_reads_recruited', 'total_bp_recruited', 'mg_read_count', 'mg_bp_count']].convert_objects(convert_numeric=True)
 
 
     summary['sag_size_mbp'] = summary.sag_total_bp / 1000000
