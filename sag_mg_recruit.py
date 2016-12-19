@@ -317,10 +317,10 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
 
     if op.exists(outdir) == False:
         safe_makedir(outdir)
-    
-    
+
+
     df = pd.read_csv(intable)
-    
+
     to_recruit = []
     for i, r in df.iterrows():
         if r.join:
@@ -338,14 +338,14 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
         # if reverse read cell is blank, but join=True, reads assumed to be interleaved
         if pd.isnull(r):
             r = None
-        
+
         joined_fq = join(n, f, fq2=r, threads=threads, mmd=mmd, mino=mino, maxo=maxo, outdir=outdir)
         logger.info("reads joined for {}".format(n))
-    
+
     total_counts = [read_count(m, outdir, 0) for m in df['to_recruit']]
     df['total_reads_before_filter'] = [c[0] for c in total_counts]
     df['total_bp_before_filter'] = [c[1] for c in total_counts]
-    
+
     len_counts = [read_count(m, outdir, minlen) for m in df['to_recruit']]
     df['read_count'] = [c[0] for c in len_counts]
     df['bp_count'] = [c[1] for c in len_counts]
@@ -401,7 +401,13 @@ def mask_sag(input_gb, out_fasta):
                         cloc.append(f.location)
                         logger.info('rRNA gene found on contig %s' % r.name)
                         rrna_count += 1
-                        
+                elif f.type == "misc_feature":
+                    if ('note' in f.qualifiers and
+                        ("16S" in str(f.qualifiers['note']).upper() or
+                         "23S" in str(f.qualifiers['note']).upper())):
+                        cloc.append(f.location)
+                        logger.info('miscellaneous feature with "16S" or "23S" in note found')
+                        rrna_count += 1
 
             # if the contig contains one rRNA gene (most common if rRNA present)
             if len(cloc) == 1:
@@ -810,7 +816,7 @@ def print_real_cov(fastq, reference, outdir, pctid, overlap, minlen, cores, clea
         bam = bwa_mem(fastq, outbam, reference, options=None, cores=cores)
 
     bam = filter_bam(bam,
-                     bam.replace(".bam", ".pctid{pctid}.overlap{overlap}.minlen{minlen}.bam".format(pctid=pctid, 
+                     bam.replace(".bam", ".pctid{pctid}.overlap{overlap}.minlen{minlen}.bam".format(pctid=pctid,
                         overlap=overlap, minlen=minlen)), overlap=overlap, pctid=pctid, minlen=minlen)
     # create per base coverage table
     bed = get_coverage(bam)
@@ -856,7 +862,7 @@ def get_recruit_info(gcov):
         logger.warning("no genome coverage data for {sag}-{metagenome} recruitment".format(sag=sag, metagenome=metagenome))
         data = [sag, metagenome, 0, 0, 0, 0, 0]
         return pd.DataFrame(data, index=cols).transpose()
-    
+
     mean_per_contig = coverage.groupby([0])[2].mean()
     sum_per_contig = coverage.groupby([0])[2].sum()
     contig_size = coverage.groupby([0])[1].max() + 1
@@ -868,7 +874,7 @@ def get_recruit_info(gcov):
     total_scaffold = len(sum_per_contig)
     uncovered_contig = len(sum_per_contig[sum_per_contig == 0])
     pct_scaffolds_covered = ((total_scaffold - uncovered_contig) / total_scaffold) * 100
- 
+
     data = [sag,
            metagenome,
            pct_scaffolds_covered,
@@ -877,7 +883,7 @@ def get_recruit_info(gcov):
            recruit_count,
            recruit_bp]
     return pd.DataFrame(data, index=cols).transpose()
-    
+
 
 
 def genome_cov_table(gcov_list):
@@ -1041,7 +1047,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     logger.info("processing sag table")
     saglist = process_gb_sags(input_sag_table, sagdir)
     logger.info("calculating SAG completeness using CheckM")
-    
+
     completeness_out = op.join(sagdir, "sag_completeness.txt")
 
     if op.exists(completeness_out):
