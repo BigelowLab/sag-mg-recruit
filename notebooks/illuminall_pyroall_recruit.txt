@@ -1,1 +1,0 @@
-	sag	metagenome	Percent_scaffolds_with_any_coverage	Percent_of_reference_bases_covered	Average_coverage	unambiguous
