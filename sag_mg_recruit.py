@@ -997,8 +997,12 @@ def concatenate_fastas(fastalist, outfasta):
 @click.option('--log',
               default=None,
               help='name of log file, else, log sent to standard out')
+@click.option('--concatenate',
+               default=True,
+               show_default=True,
+               help='include concatenated SAG in analysis')
 def main(input_mg_table, input_sag_table, outdir, cores,
-         mmd, mino, maxo, minlen, pctid, overlap, log):
+         mmd, mino, maxo, minlen, pctid, overlap, log, concatenate):
     if log is None:
         log = logging.StreamHandler(sys.stdout)
         log.setLevel(logging.INFO)
@@ -1058,11 +1062,13 @@ def main(input_mg_table, input_sag_table, outdir, cores,
 
     logger.info("running bwa read recruitment")
 
-    sagconcat = op.join(sagdir, "concatenated_sags.fasta")
-    if op.exists(sagconcat) == False:
-        sagconcat = concatenate_fastas(saglist, sagconcat)
+    if concatenate:
+        sagconcat = op.join(sagdir, "concatenated_sags.fasta")
+        if op.exists(sagconcat) == False:
+            sagconcat = concatenate_fastas(saglist, sagconcat)
 
-    saglist.append(sagconcat)
+        saglist.append(sagconcat)
+
     coverage_out = op.join(covdir, "coverage_info_pctid{pctid}_minlen{minlen}_overlap{overlap}.txt".format(pctid=pctid, minlen=minlen, overlap=overlap))
     if op.exists(coverage_out):
         covtbl = pd.read_csv(coverage_out, sep="\t")
