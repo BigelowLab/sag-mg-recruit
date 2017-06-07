@@ -519,39 +519,56 @@ def sag_checkm_completeness(fasta, cores):
     return completeness
 
 
-def checkm_completeness(saglist, outfile, cores):
+def checkm_completeness(saglist, outfile, cores, checkm):
     '''calculate checkM completeness value given the SAGs listed in a file
 
     Args:
         sagfile (str): path to file containing a list of paths, one per line, of SAG fasta files to analyze
         outfile (str): path to location where output table will be written
         cores (int): number of cores to use to run checkm
-
+        checkm (bool): option for program.  If user opts out of running checkm, just return table with checkm
     Returns:
         tab-delimited file of checkm completeness per SAG
     '''
     logger.info("gathering checkM completeness values for all SAGs listed in file: {}".format(saglist))
     df = pd.DataFrame(columns=['Bin Id', 'Marker lineage', '# genomes', '# marker sets', '0', '1', '2', '3', '4', '5+', 'Completeness', 'Contamination', 'Strain heterogeneity', 'total_bp'])
 
-    for s in saglist:
-        if not op.exists:
-            logger.error("SAG not found for %s" % s)
-            continue
-        if not op.isfile:
-            logger.error("%s is not a file" % s)
-            continue
-        completeness = sag_checkm_completeness(s, cores=cores)
-        if completeness is None:
-            logger.info("completeness stats for %s not determined" % s)
-            continue
+    if checkm:
+        df = pd.DataFrame(columns=['Bin Id', 'Marker lineage', '# genomes', '# marker sets', '0', '1', '2', '3', '4', '5+', 'Completeness', 'Contamination', 'Strain heterogeneity', 'total_bp'])
+        for s in saglist:
+            if not op.exists:
+                logger.error("SAG not found for %s" % s)
+                continue
+            if not op.isfile:
+                logger.error("%s is not a file" % s)
+                continue
+            completeness = sag_checkm_completeness(s, cores=cores)
+            if completeness is None:
+                logger.info("completeness stats for %s not determined" % s)
+                continue
 
-        length = count_fasta_bp(s)
-        logger.debug("sag %s is %s bp in length" % (s, length))
+            length = count_fasta_bp(s)
+            logger.debug("sag %s is %s bp in length" % (s, length))
 
-        completeness['total_bp'] = length
-        # completeness['calculated_length'] = int(completeness.total_bp * 100/completeness.Completeness)
+            completeness['total_bp'] = length
+            # completeness['calculated_length'] = int(completeness.total_bp * 100/completeness.Completeness)
 
-        df = pd.concat([df, completeness])
+            df = pd.concat([df, completeness])
+    else:
+        binid = []
+        completeness = []
+        total_bp = []
+        for s in saglist:
+            if not op.exists:
+                logger.error("SAG not found for %s" % s)
+                continue
+            if not op.isfile:
+                logger.error("%s is not a file" % s)
+                continue
+            binid.append(op.basename(s))
+            completeness.append("NA")
+            total_bp.append(count_fasta_bp(s))
+        df = pd.DataFrame(dat={'Bin ID':binid, 'Completeness':completeness, 'total_bp':total_bp})
 
     df.to_csv(outfile, sep="\t")
     return df
@@ -608,22 +625,6 @@ def index_bam(bam_file):
         with file_transaction(bam_index) as tx_out_file:
             run('samtools index %s %s' % (bam_file, tx_out_file))
     return bam_index
-
-
-# def _match_len(md):
-#     length = 0
-#     number = ""
-#     for i, c in enumerate(md):
-#         try:
-#             val = int(c)
-#             number = number+val
-#         except:
-#             if len(number) > 0:
-#                 length += int(number)
-#                 number=""
-#         if i == len(md)-1:
-#             length += int(number)
-#     return length
 
 
 def read_overlap_pctid(l, pctid, min_len, overlap=0):
@@ -1001,8 +1002,12 @@ def concatenate_fastas(fastalist, outfasta):
                default=True,
                show_default=True,
                help='include concatenated SAG in analysis')
+@click.option('--checkm',
+                default=True,
+                show_default=True,
+                help='should checkm be run on the SAGs?')
 def main(input_mg_table, input_sag_table, outdir, cores,
-         mmd, mino, maxo, minlen, pctid, overlap, log, concatenate):
+         mmd, mino, maxo, minlen, pctid, overlap, log, concatenate, checkm):
     if log is None:
         log = logging.StreamHandler(sys.stdout)
         log.setLevel(logging.INFO)
@@ -1058,7 +1063,9 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         sagtbl = pd.read_csv(completeness_out, sep="\t")
         logger.info("SAGs have already been processed.  Loading {}".format(completeness_out))
     else:
-        sagtbl = checkm_completeness(saglist, completeness_out, cores)
+        sagtbl = checkm_completeness(saglist, completeness_out, cores, checkm)
+
+
 
     logger.info("running bwa read recruitment")
 
