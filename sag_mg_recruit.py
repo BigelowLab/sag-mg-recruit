@@ -533,7 +533,9 @@ def checkm_completeness(saglist, outfile, cores, checkm):
     logger.info("gathering checkM completeness values for all SAGs listed in file: {}".format(saglist))
     df = pd.DataFrame(columns=['Bin Id', 'Marker lineage', '# genomes', '# marker sets', '0', '1', '2', '3', '4', '5+', 'Completeness', 'Contamination', 'Strain heterogeneity', 'total_bp'])
 
-    if checkm:
+    if checkm == "True":
+        print(checkm)
+        print("Running checkm now")
         df = pd.DataFrame(columns=['Bin Id', 'Marker lineage', '# genomes', '# marker sets', '0', '1', '2', '3', '4', '5+', 'Completeness', 'Contamination', 'Strain heterogeneity', 'total_bp'])
         for s in saglist:
             if not op.exists:
@@ -568,9 +570,9 @@ def checkm_completeness(saglist, outfile, cores, checkm):
             binid.append(op.basename(s))
             completeness.append("NA")
             total_bp.append(count_fasta_bp(s))
-        df = pd.DataFrame(dat={'Bin ID':binid, 'Completeness':completeness, 'total_bp':total_bp})
+        df = pd.DataFrame(data={'Bin ID':binid, 'Completeness':completeness, 'total_bp':total_bp})
 
-    df.to_csv(outfile, sep="\t")
+    df.to_csv(outfile, sep="\t", index=False)
     return df
 
 
@@ -1069,7 +1071,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
 
     logger.info("running bwa read recruitment")
 
-    if concatenate:
+    if concatenate == "True":
         sagconcat = op.join(sagdir, "concatenated_sags.fasta")
         if op.exists(sagconcat) == False:
             sagconcat = concatenate_fastas(saglist, sagconcat)
