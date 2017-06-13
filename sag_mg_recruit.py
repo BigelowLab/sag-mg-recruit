@@ -519,7 +519,7 @@ def sag_checkm_completeness(fasta, cores):
     return completeness
 
 
-def checkm_completeness(saglist, outfile, cores, checkm):
+def process_sag_fastas(saglist, outfile, cores, checkm):
     '''calculate checkM completeness value given the SAGs listed in a file
 
     Args:
@@ -533,9 +533,8 @@ def checkm_completeness(saglist, outfile, cores, checkm):
     logger.info("gathering checkM completeness values for all SAGs listed in file: {}".format(saglist))
     df = pd.DataFrame(columns=['Bin Id', 'Marker lineage', '# genomes', '# marker sets', '0', '1', '2', '3', '4', '5+', 'Completeness', 'Contamination', 'Strain heterogeneity', 'total_bp'])
 
-    if checkm == "True":
-        print(checkm)
-        print("Running checkm now")
+    if checkm == "True" or checkm == True:
+        logger.info("checkm completeness calculations requested")
         df = pd.DataFrame(columns=['Bin Id', 'Marker lineage', '# genomes', '# marker sets', '0', '1', '2', '3', '4', '5+', 'Completeness', 'Contamination', 'Strain heterogeneity', 'total_bp'])
         for s in saglist:
             if not op.exists:
@@ -1001,10 +1000,12 @@ def concatenate_fastas(fastalist, outfasta):
               default=None,
               help='name of log file, else, log sent to standard out')
 @click.option('--concatenate',
+               type=click.BOOL,
                default=True,
                show_default=True,
                help='include concatenated SAG in analysis')
 @click.option('--checkm',
+                type=click.BOOL,
                 default=True,
                 show_default=True,
                 help='should checkm be run on the SAGs?')
@@ -1029,7 +1030,10 @@ def main(input_mg_table, input_sag_table, outdir, cores,
                   "minlen = {}".format(minlen),
                   "pctid = {}".format(pctid),
                   "overlap = {}".format(overlap),
-                  "log = {}".format(log), sep="\n"))
+                  "log = {}".format(log),
+                  "concatenate = {}".format(concatenate),
+                  "checkm={}".format(checkm), sep="\n"))
+
     logger.info(parms)
 
     if outdir is None:
@@ -1065,13 +1069,11 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         sagtbl = pd.read_csv(completeness_out, sep="\t")
         logger.info("SAGs have already been processed.  Loading {}".format(completeness_out))
     else:
-        sagtbl = checkm_completeness(saglist, completeness_out, cores, checkm)
-
-
+        sagtbl = process_sag_fastas(saglist, completeness_out, cores, checkm)
 
     logger.info("running bwa read recruitment")
 
-    if concatenate == "True":
+    if concatenate == "True" or concatenate == True:
         sagconcat = op.join(sagdir, "concatenated_sags.fasta")
         if op.exists(sagconcat) == False:
             sagconcat = concatenate_fastas(saglist, sagconcat)
