@@ -570,7 +570,7 @@ def checkm_completeness(saglist, outfile, cores, checkm):
             binid.append(op.basename(s))
             completeness.append("NA")
             total_bp.append(count_fasta_bp(s))
-        df = pd.DataFrame(data={'Bin ID':binid, 'Completeness':completeness, 'total_bp':total_bp})
+        df = pd.DataFrame(data={'Bin Id':binid, 'Completeness':completeness, 'total_bp':total_bp})
 
     df.to_csv(outfile, sep="\t", index=False)
     return df
