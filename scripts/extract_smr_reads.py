@@ -10,6 +10,7 @@ from scgc.utils import file_transaction, safe_makedir, run, tmp_dir, pigz_file
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def read_overlap_pctid(l, pctid, min_len, overlap=0):
     real_len = l.infer_query_length()
     aln_len = l.query_alignment_length
@@ -42,15 +43,10 @@ def separate_bam(bam, alignedbam, unalignedbam, pctid=95, minlen=150, overlap=0)
     with pysam.AlignmentFile(bam, "rb", check_sq=False) as ih, \
         pysam.AlignmentFile(alignedbam, "wb", template=ih) as oh_aligned, \
         pysam.AlignmentFile(unalignedbam, "wb", template=ih) as oh_unaligned:
-        good = 0
-        good_bp = 0
-        total = 0
         for i, l in enumerate(ih):
             if l.is_duplicate:
                 continue
             elif read_overlap_pctid(l, pctid, minlen, overlap):
-                good += 1
-                good_bp += l.query_alignment_length
                 oh_aligned.write(l)
             else:
                 oh_unaligned.write(l)
