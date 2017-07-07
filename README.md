@@ -26,24 +26,27 @@ sag-mg-recruit -h
 which will return:
 
 ```
+sag-mg-recruit --help
 Usage: sag-mg-recruit [OPTIONS] INPUT_MG_TABLE INPUT_SAG_TABLE
 
 Options:
-  --outdir TEXT      directory location to place output files
-  --cores INTEGER    number of cores to run on, default=8
-  --mmd FLOAT        for join step: mismatch density for join step in mg
-                     processing, default=0.05
-  --mino INTEGER     for join step: minimum overlap for join step,
-                     default=35bp
-  --maxo INTEGER     for join step: maximum overlap for join step,
-                     default=150bp
-  --minlen INTEGER   for metagenomes: minimum read length, default=150bp
-  --pctid INTEGER    for alignment: minimum percent identity to keep within
-                     overlapping region, default=95
-  --overlap INTEGER  for alignment: percent read that must overlap with
-                     reference sequence to keep, default=95
-  --log TEXT         name of log file, else, log sent to standard out
-  -h, --help         Show this message and exit.
+  --outdir TEXT          directory location to place output files
+  --cores INTEGER        number of cores to run on  [default: 8]
+  --mmd FLOAT            for join step: mismatch density  [default: 0.05]
+  --mino INTEGER         for join step: minimum overlap  [default: 35]
+  --maxo INTEGER         for join step: maximum overlap  [default: 150]
+  --minlen INTEGER       for alignment and mg read count: minimum alignment
+                         length to include; minimum read size to include
+                         [default: 150]
+  --pctid INTEGER        for alignment: minimum percent identity to keep
+                         within overlapping region  [default: 95]
+  --overlap INTEGER      for alignment: percent read that must overlap with
+                         reference sequence to keep  [default: 0]
+  --log TEXT             name of log file, else, log sent to standard out
+  --concatenate BOOLEAN  include concatenated SAG in analysis  [default: True]
+  --checkm BOOLEAN       should checkm be run on the SAGs?  [default: True]
+  -h, --help             Show this message and exit.
+
 ```
 
 ### Input details:
@@ -117,3 +120,28 @@ sag-mg-recruit --outdir /home/smroutput --cores 40 --minlen 100  --pctid 90 --ov
 ```
 
 **Note** a quirk of one of the dependencies (FLASH) which is used for the join step: if there are metagenomic reads that need to be joined, make sure the output directory is specificied as a relative rather than absolute path.
+
+
+### Other Functions:
+
+Other scripts can be found in smr/scripts/
+
+extract_smr_reads.py:
+Extracts unaligned and aligned reads from smr run, and writes to the smr results coverage directory.
+
+```
+Usage: extract_smr_reads.py [OPTIONS] SMR_DIR
+
+Options:
+  --minlen INTEGER   for alignment and mg read count: minimum alignment length
+                     to include; minimum read size to include  [default: 150]
+  --pctid INTEGER    for alignment: minimum percent identity to keep within
+                     overlapping region  [default: 95]
+  --overlap INTEGER  for alignment: percent read that must overlap with
+                     reference sequence to keep  [default: 0]
+  --cores INTEGER    how many cores  [default: 10]
+  -h, --help         Show this message and exit.
+```
+
+Example command:
+extract_smr_reads.py  --minlen 150 --pctid 95 /smr/output/directory/
