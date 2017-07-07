@@ -127,7 +127,7 @@ sag-mg-recruit --outdir /home/smroutput --cores 40 --minlen 100  --pctid 90 --ov
 Other scripts can be found in smr/scripts/
 
 extract_smr_reads.py:
-Extracts unaligned and aligned reads from smr run, and writes to the smr results coverage directory.
+Extracts unaligned and aligned reads from smr run, and writes to the smr run's coverage directory.
 
 ```
 Usage: extract_smr_reads.py [OPTIONS] SMR_DIR
