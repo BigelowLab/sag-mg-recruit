@@ -93,7 +93,7 @@ def extract_fastq(bam, out_fastq):
               show_default=True,
               help='how many cores')
 def main(smr_dir, pctid, minlen, overlap, cores):
-    ''' Creates two fastq.gz files per original bam file in 'coverage' directory, 
+    ''' Creates two fastq.gz files per original bam file in 'coverage' directory,
     containing unaligned and aligned reads
 
     Tested:
@@ -104,8 +104,10 @@ def main(smr_dir, pctid, minlen, overlap, cores):
     # grab original bam alignment from smr (determined as the ones without .pctidXX suffix)
     bam_files = lambda smr_dir: [i for i in glob.glob(op.join(smr_dir, 'coverage','*.bam')) if 'pctid' not in i]
     for bam in bam_files(smr_dir):
-        aligned_out = '{}_aligned.fastq'.format(bam.split(".")[0])
-        unaligned_out = '{}_unaligned.fastq'.format(bam.split(".")[0])
+        aligned_out = '{bam}.pctid{pct}.overlap{olap}.minlen{ml}.aligned.fastq'.format(bam=bam.split(".")[0],
+                                                                                        pct=pctid, olap=overlap,ml=minlen)
+        unaligned_out = '{bam}.pctid{pct}.overlap{olap}.minlen{ml}.unaligned.fastq'.format(bam=bam.split(".")[0],
+                                                                                        pct=pctid, olap=overlap,ml=minlen)
         with tmp_dir() as out_dir:
             logger.info("separating aligned and unaligned reads for {}".format(bam))
             abam = op.join(out_dir, "aligned.bam")
