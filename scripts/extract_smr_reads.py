@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# coding=utf-8
+
 import pysam
 import glob
 import os.path as op
@@ -85,8 +88,15 @@ def extract_fastq(bam, out_fastq):
               default=0,
               show_default=True,
               help="for alignment: percent read that must overlap with reference sequence to keep")
-def main(smr_dir, pctid, minlen, overlap):
-    '''
+@click.option('--cores',
+              default=10,
+              show_default=True,
+              help='how many cores')
+def main(smr_dir, pctid, minlen, overlap, cores):
+    ''' Creates two fastq.gz files per original bam file in 'coverage' directory, 
+    containing unaligned and aligned reads
+
+    Tested:
     >> smr_dir = '/mnt/stepanauskas_nfs/julia/fragdev/extract_reads/'
     >> bam_files(smr_dir) == ['/mnt/stepanauskas_nfs/julia/fragdev/extract_reads/coverage/Tara_test1_vs_Simons_LoCos_Conc.bam']
     >> main(smr_dir)
@@ -100,11 +110,12 @@ def main(smr_dir, pctid, minlen, overlap):
             logger.info("separating aligned and unaligned reads for {}".format(bam))
             abam = op.join(out_dir, "aligned.bam")
             ubam = op.join(out_dir, "unaliged.bam")
-            aligned_bam, unaligned_bam = filter_bam(bam, abam, ubam, pctid=pctid, minlen=minlen, overlap=overlap)
+            aligned_bam, unaligned_bam = separate_bam(bam, abam, ubam, pctid=pctid, minlen=minlen, overlap=overlap)
 
             aligned_out = extract_fastq(aligned_bam, aligned_out)
             unaligned_out = extract_fastq(unaligned_bam, unaligned_out)
-        logger.info('fastq files created for {}'.format(bam))
+            zipped = [pigz_file(i, cores=cores) for i in [aligned_out, unaligned_out]]
+        logger.info('fastq files created for {}, called {}'.format(bam, ",".join(zipped)))
 
 
 if __name__=='__main__':
