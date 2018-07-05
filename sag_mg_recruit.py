@@ -313,6 +313,8 @@ def process_multi_mgs(intable, outdir, threads, mmd, mino, maxo, minlen):
         pandas.DataFrame - output table with number of reads
     '''
     if op.exists(op.join(outdir, "multi_mg_qc_minlen{}.txt".format(minlen))):
+        logger.info("looks like these metagenomes have already been processed, loading mg stats table.")
+        logger.info("If the metagenomes have been moved, please delete {} and rerun sag-mg-recruit".format(op.join(outdir, "multi_mg_qc_minlen{}.txt".format(minlen))))
         return pd.read_csv(op.join(outdir, "multi_mg_qc_minlen{}.txt".format(minlen)))
 
     if op.exists(outdir) == False:
@@ -446,7 +448,8 @@ def gbk_to_fasta(input_gb, out_fasta):
     with open(input_gb, "rU") as input_handle, open(out_fasta, "w") as oh:
         for r in SeqIO.parse(input_handle, "genbank"):
             print(">", r.name, sep="", file=oh)
-            print(r.seq, file=oh)
+            for i in range(0, len(r.seq), 60):
+                print(r.seq[i:i+60], file=oh)
     return out_fasta
 
 
@@ -478,7 +481,12 @@ def process_gb_sags(tbl, outdir):
             if l.fasta_file is None:
                 fas_sags.append(gbk_to_fasta(l.gbk_file, out_fasta))
             else:
-                shutil.copyfile(l.fasta_file, out_fasta)
+                with open(l.fasta_file) as ih, open(out_fasta, "w") as oh:
+                    for name, seq in read_fasta(ih):
+                        print(">{}".format(name), file=oh)
+                        seq_fix = seq.replace(" ","")
+                        for j in range(0, len(seq_fix), 60):
+                            print(seq_fix[j:j+60], file=oh)
             fas_sags.append(out_fasta)
     return fas_sags
 
@@ -713,14 +721,19 @@ def bwa_mem(fastq, out_file, reference, options, cores=1):
     parameters
         fastq : path to reads
         out_file : path to aligned reads bam
-        index : path to bwa index
+        reference : path to bwa index
         options : bwa mem options
         cores : int
     returns
         output file path : string
     """
+
     if file_exists(out_file):
         return out_file
+
+    assert op.exists(fastq), "Could not find fastq file {}".format(fastq)
+    assert op.exists(reference), "Could not find reference file {}".format(reference)
+
     predefined_options = [('-t', False)]
 
     if options is not None:
