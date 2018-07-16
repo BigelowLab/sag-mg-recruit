@@ -910,17 +910,10 @@ def genome_cov_table(gcov_list):
     Returns:
         pandas dataframe summary of recruitment information from all genome coverage files in list
     '''
-    cols = ['sag',
-            'metagenome',
-            'Percent_scaffolds_with_any_coverage',
-            'Percent_of_reference_bases_covered',
-            'Average_coverage',
-            'total_reads_recruited',
-            'total_bp_recruited']
-    big = pd.DataFrame(columns=cols)
+    
+    big = pd.concat([get_recruit_info(g) for g in gcov_list])
     for g in gcov_list:
-        new = get_recruit_info(g)
-        big = pd.concat([big, new])
+        os.remove(g)
     return big
 
 
