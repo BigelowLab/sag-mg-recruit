@@ -1017,7 +1017,7 @@ def concatenate_fastas(fastalist, outfasta):
                 show_default=True,
                 help='should checkm be run on the SAGs?')
 @click.option('--keep_coverage',
-                type=click.flag,
+                is_flag=True,
                 help='if you want to keep the genome coverage table (large)')
 def main(input_mg_table, input_sag_table, outdir, cores,
          mmd, mino, maxo, minlen, pctid, overlap, log, concatenate, checkm, keep_coverage=False):
