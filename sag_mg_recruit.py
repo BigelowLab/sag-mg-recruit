@@ -901,7 +901,7 @@ def get_recruit_info(gcov):
 
 
 
-def genome_cov_table(gcov_list):
+def genome_cov_table(gcov_listm dev=False):
     '''create large dataframe of metagenome recruitment information given a number of genome coverage files
 
     Args:
@@ -910,14 +910,15 @@ def genome_cov_table(gcov_list):
     Returns:
         pandas dataframe summary of recruitment information from all genome coverage files in list
     '''
-    
+
     big = pd.concat([get_recruit_info(g) for g in gcov_list])
-    for g in gcov_list:
-        os.remove(g)
+    if not dev:
+        for g in gcov_list:
+            os.remove(g)
     return big
 
 
-def cov_from_list(fastqlist, referencelist, mg_names, reference_names, outdir, pctid, overlap, minlen, cores, outtable, cleanup=False):
+def cov_from_list(fastqlist, referencelist, mg_names, reference_names, outdir, pctid, overlap, minlen, cores, outtable, cleanup=False, keep_coverage=False):
     '''create large datframe of recruitment information for multiple SAGs against multiple metagenomes
     Args:
         fastqlist(list): list of paths to metagenomic reads in fastq format
@@ -944,7 +945,7 @@ def cov_from_list(fastqlist, referencelist, mg_names, reference_names, outdir, p
             bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, overlap=overlap, minlen=minlen, cores=cores, cleanup=cleanup, mgname=fn, referencename=rn)
             bedlist.append(bed)
 
-    table = genome_cov_table(bedlist)
+    table = genome_cov_table(bedlist, dev=keep_coverage)
     table.to_csv(outtable, sep="\t", index=False)
     logger.info("result table written to {outfile}".format(outfile=outtable))
     return table
@@ -1015,8 +1016,11 @@ def concatenate_fastas(fastalist, outfasta):
                 default=True,
                 show_default=True,
                 help='should checkm be run on the SAGs?')
+@click.option('--keep_coverage',
+                type=click.flag,
+                help='if you want to keep the genome coverage table (large)')
 def main(input_mg_table, input_sag_table, outdir, cores,
-         mmd, mino, maxo, minlen, pctid, overlap, log, concatenate, checkm):
+         mmd, mino, maxo, minlen, pctid, overlap, log, concatenate, checkm, keep_coverage=False):
     if log is None:
         log = logging.StreamHandler(sys.stdout)
         log.setLevel(logging.INFO)
@@ -1091,7 +1095,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         covtbl = pd.read_csv(coverage_out, sep="\t")
         logger.info("bwa recruitment has already been done. loading {}".format(coverage_out))
     else:
-        covtbl = cov_from_list(mglist, saglist, mgnames, None, covdir, pctid, overlap, minlen, cores, coverage_out, cleanup=False)
+        covtbl = cov_from_list(mglist, saglist, mgnames, None, covdir, pctid, overlap, minlen, cores, coverage_out, cleanup=False, keep_coverage=keep_coverage)
 
     # process tables to make summary table
     logger.info('putting together summary tables')
