@@ -901,7 +901,7 @@ def get_recruit_info(gcov):
 
 
 
-def genome_cov_table(gcov_listm dev=False):
+def genome_cov_table(gcov_list, dev=False):
     '''create large dataframe of metagenome recruitment information given a number of genome coverage files
 
     Args:
