@@ -901,7 +901,7 @@ def get_recruit_info(gcov):
 
 
 
-def genome_cov_table(gcov_list, dev=False):
+def genome_cov_table(gcov_list):
     '''create large dataframe of metagenome recruitment information given a number of genome coverage files
 
     Args:
@@ -912,13 +912,11 @@ def genome_cov_table(gcov_list, dev=False):
     '''
 
     big = pd.concat([get_recruit_info(g) for g in gcov_list])
-    if not dev:
-        for g in gcov_list:
-            os.remove(g)
+
     return big
 
 
-def cov_from_list(fastqlist, referencelist, mg_names, reference_names, outdir, pctid, overlap, minlen, cores, outtable, cleanup=False, keep_coverage=False):
+def cov_from_list(fastqlist, referencelist, mg_names, reference_names, outdir, pctid, overlap, minlen, cores, outtable, cleanup=False):
     '''create large datframe of recruitment information for multiple SAGs against multiple metagenomes
     Args:
         fastqlist(list): list of paths to metagenomic reads in fastq format
@@ -945,7 +943,7 @@ def cov_from_list(fastqlist, referencelist, mg_names, reference_names, outdir, p
             bed = print_real_cov(f, r, outdir=outdir, pctid=pctid, overlap=overlap, minlen=minlen, cores=cores, cleanup=cleanup, mgname=fn, referencename=rn)
             bedlist.append(bed)
 
-    table = genome_cov_table(bedlist, dev=keep_coverage)
+    table = genome_cov_table(bedlist)
     table.to_csv(outtable, sep="\t", index=False)
     logger.info("result table written to {outfile}".format(outfile=outtable))
     return table
@@ -1129,6 +1127,12 @@ def main(input_mg_table, input_sag_table, outdir, cores,
     summary.to_csv(summaryout, sep="\t", index=False)
 
     logger.info('process completed.')
+
+    if not keep_coverage:
+        logger.info('cleaning up: deleting large genome coverage files')
+        cov_files = glob.glob(op.join(covdir, "*.genomecoverage"))
+        for f in cov_files: os.remove(f)
+
     return summary
 
 
