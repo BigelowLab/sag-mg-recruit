@@ -1093,7 +1093,7 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         covtbl = pd.read_csv(coverage_out, sep="\t")
         logger.info("bwa recruitment has already been done. loading {}".format(coverage_out))
     else:
-        covtbl = cov_from_list(mglist, saglist, mgnames, None, covdir, pctid, overlap, minlen, cores, coverage_out, cleanup=False, keep_coverage=keep_coverage)
+        covtbl = cov_from_list(mglist, saglist, mgnames, None, covdir, pctid, overlap, minlen, cores, coverage_out, cleanup=False)
 
     # process tables to make summary table
     logger.info('putting together summary tables')
