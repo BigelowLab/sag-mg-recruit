@@ -20,6 +20,7 @@ import gzip
 import pysam
 from Bio import SeqIO
 import matplotlib
+import glob
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from distutils.spawn import find_executable
