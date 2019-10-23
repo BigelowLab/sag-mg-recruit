@@ -10,6 +10,7 @@ from __future__ import division
 import subprocess
 import os
 import sys
+import contextlib
 import pandas as pd
 from itertools import groupby
 import click
@@ -24,8 +25,6 @@ import glob
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from distutils.spawn import find_executable
-
-from scgc.utils import file_transaction, safe_makedir, run, tmp_dir, pigz_file
 
 
 __version_info__ = (0, 0, 1)
@@ -48,6 +47,107 @@ def check_dependencies(executables):
             print("`%s` not found in PATH." % exe)
         sys.exit(1)
 
+@contextlib.contextmanager
+def file_transaction(*rollback_files):
+    """
+    Wrap file generation in a transaction, moving to output if finishes.
+    """
+    exts = {".vcf": ".idx", ".bam": ".bai", "vcf.gz": ".tbi", ".fastq.gz": ".count"}
+    safe_names, orig_names = _flatten_plus_safe(rollback_files)
+    # remove any half-finished transactions
+    remove_files(safe_names)
+    try:
+        if len(safe_names) == 1:
+            yield safe_names[0]
+        else:
+            yield tuple(safe_names)
+    # failure -- delete any temporary files
+    except:
+        remove_files(safe_names)
+        remove_tmpdirs(safe_names)
+        raise
+    # worked -- move the temporary files to permanent location
+    else:
+        for safe, orig in zip(safe_names, orig_names):
+            if os.path.exists(safe):
+                shutil.move(safe, orig)
+                for check_ext, check_idx in six.iteritems(exts):
+                    if safe.endswith(check_ext):
+                        safe_idx = safe + check_idx
+                        if os.path.exists(safe_idx):
+                            shutil.move(safe_idx, orig + check_idx)
+        remove_tmpdirs(safe_names)
+
+def safe_makedir(dname):
+    """
+    Make a directory if it doesn't exist, handling concurrent race conditions.
+    """
+    if not dname:
+        return dname
+    num_tries = 0
+    max_tries = 5
+    while not os.path.exists(dname):
+        try:
+            os.makedirs(dname)
+        except OSError:
+            if num_tries > max_tries:
+                raise
+            num_tries += 1
+            time.sleep(2)
+    return dname
+
+def run(cmd, description=None, iterable=None, retcodes=[0]):
+    """Runs a command using check_call.
+
+    Args:
+        cmd (str): shell command as a string
+        description (Optional[str]):
+        iterable (Optional[str]):
+    """
+    if description:
+        utils_logger.info(description)
+    utils_logger.info("$> %s" % cmd)
+    if iterable:
+        return stdout_iter(cmd)
+    else:
+        p = capture_stderr(cmd)
+        if p.returncode not in retcodes:
+            for line in TextIOWrapper(p.stderr):
+                utils_logger.error(line.strip())
+            raise subprocess.CalledProcessError(p.returncode, cmd=cmd)
+        else:
+            return p
+
+@contextlib.contextmanager
+def tmp_dir():
+    d = None
+    try:
+        d = tempfile.mkdtemp()
+        yield d
+    finally:
+        if d:
+            shutil.rmtree(d)
+
+def pigz_file(fname, cores=1):
+    if not op.exists(fname):
+        raise IOError(2, "No such file:", fname)
+    file_path = ""
+    out_file = ""
+    if fname.endswith('.gz'):
+        out_file = fname
+        if is_plain(fname):
+            # need to rename the file
+            file_path = op.splitext(fname)[0]
+            shutil.move(fname, file_path)
+    else:
+        out_file = fname + '.gz'
+        file_path = fname
+    if file_path:
+        try:
+            run("pigz -f --best -p %d %s" % (cores, file_path))
+        except:
+            run("gzip -f --best %s" % file_path)
+    return out_file
 
 def readfx(fastx):
     if not file_exists(fastx):

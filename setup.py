@@ -31,10 +31,9 @@ setup(
         'pandas',
         'pysam',
         'sarge',
-        'scgc',
         'matplotlib'],
     entry_points='''
         [console_scripts]
         sag-mg-recruit=sag_mg_recruit:main
         '''
-) 
+)
