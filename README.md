@@ -20,13 +20,13 @@ python setup.py install
 After installation, for instructions on how to run type:
 
 ```
-sag-mg-recruit -h
+sag-mg-recruit --help
 ```
 
 which will return:
 
 ```
-sag-mg-recruit --help
+$ sag-mg-recruit --help
 Usage: sag-mg-recruit [OPTIONS] INPUT_MG_TABLE INPUT_SAG_TABLE
 
 Options:
@@ -45,8 +45,8 @@ Options:
   --log TEXT             name of log file, else, log sent to standard out
   --concatenate BOOLEAN  include concatenated SAG in analysis  [default: True]
   --checkm BOOLEAN       should checkm be run on the SAGs?  [default: True]
+  --keep_coverage        if you want to keep the genome coverage table (large)
   -h, --help             Show this message and exit.
-
 ```
 
 ### Input details:
