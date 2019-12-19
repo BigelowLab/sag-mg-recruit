@@ -7,29 +7,38 @@ read recruitment of metagenomes to SAGs using bwa.
 from __future__ import print_function
 from __future__ import division
 
+
 import subprocess
 import os
 import sys
 import contextlib
 import pandas as pd
-from itertools import groupby
 import click
 import os.path as op
+import os
 import logging
 import shutil
 import gzip
 import pysam
-from Bio import SeqIO
-import matplotlib
+import six
 import glob
+import tempfile
+from sarge import capture_stderr
+
+
+import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 from distutils.spawn import find_executable
+from itertools import groupby
+from Bio import SeqIO
+from io import TextIOWrapper
 
 
 __version_info__ = (0, 0, 1)
 __version__ = '.'.join(map(str, __version_info__))
-REQUIRES = ["bedtools", "samtools", "checkm", "bwa", "gzip", "gunzip"]
+REQUIRES = ["bedtools", "samtools", "bwa", "gzip", "gunzip"]
 
 
 logger = logging.getLogger(__name__)
@@ -47,12 +56,43 @@ def check_dependencies(executables):
             print("`%s` not found in PATH." % exe)
         sys.exit(1)
 
+def remove_files(fnames):
+    for x in fnames:
+        if x and os.path.exists(x):
+            if os.path.isfile(x):
+                os.remove(x)
+            elif os.path.isdir(x):
+                shutil.rmtree(x, ignore_errors=True)
+
+def remove_tmpdirs(fnames):
+    for x in fnames:
+        xdir = os.path.dirname(os.path.abspath(x))
+        if xdir and os.path.exists(xdir):
+            shutil.rmtree(xdir, ignore_errors=True)
+
+def _flatten_plus_safe(rollback_files):
+    """
+    Flatten names of files and create temporary file names.
+    """
+    tx_files, orig_files = [], []
+    for fnames in rollback_files:
+        if isinstance(fnames, six.string_types):
+            fnames = [fnames]
+        for fname in fnames:
+            basedir = safe_makedir(os.path.dirname(fname))
+            tmpdir = safe_makedir(tempfile.mkdtemp(dir=basedir))
+            tx_file = os.path.join(tmpdir, os.path.basename(fname))
+            tx_files.append(tx_file)
+            orig_files.append(fname)
+    return tx_files, orig_files
+
 @contextlib.contextmanager
 def file_transaction(*rollback_files):
     """
     Wrap file generation in a transaction, moving to output if finishes.
     """
     exts = {".vcf": ".idx", ".bam": ".bai", "vcf.gz": ".tbi", ".fastq.gz": ".count"}
+
     safe_names, orig_names = _flatten_plus_safe(rollback_files)
     # remove any half-finished transactions
     remove_files(safe_names)
@@ -96,6 +136,11 @@ def safe_makedir(dname):
             time.sleep(2)
     return dname
 
+def stdout_iter(cmd):
+    p = capture_stdout(cmd)
+    for line in TextIOWrapper(p.stdout):
+        yield line
+
 def run(cmd, description=None, iterable=None, retcodes=[0]):
     """Runs a command using check_call.
 
@@ -105,15 +150,15 @@ def run(cmd, description=None, iterable=None, retcodes=[0]):
         iterable (Optional[str]):
     """
     if description:
-        utils_logger.info(description)
-    utils_logger.info("$> %s" % cmd)
+        logger.info(description)
+    logger.info("$> %s" % cmd)
     if iterable:
         return stdout_iter(cmd)
     else:
         p = capture_stderr(cmd)
         if p.returncode not in retcodes:
             for line in TextIOWrapper(p.stderr):
-                utils_logger.error(line.strip())
+                logger.error(line.strip())
             raise subprocess.CalledProcessError(p.returncode, cmd=cmd)
         else:
             return p
@@ -1119,7 +1164,8 @@ def concatenate_fastas(fastalist, outfasta):
                 is_flag=True,
                 help='if you want to keep the genome coverage table (large)')
 def main(input_mg_table, input_sag_table, outdir, cores,
-         mmd, mino, maxo, minlen, pctid, overlap, log, concatenate, checkm, keep_coverage=False):
+         mmd, mino, maxo, minlen, pctid, overlap, log,
+         concatenate, checkm, keep_coverage=False):
     if log is None:
         log = logging.StreamHandler(sys.stdout)
         log.setLevel(logging.INFO)
@@ -1128,6 +1174,9 @@ def main(input_mg_table, input_sag_table, outdir, cores,
         logging.basicConfig(filename=log, level=logging.INFO)
 
     check_dependencies(REQUIRES)
+    if checkm:
+        check_dependencies(['checkm'])
+        
     parms = str(print("PARAMETERS for sag-mg-recruit:",
                   "input_mg_table = {}".format(input_mg_table),
                   "input_sag_table = {}".format(input_sag_table),

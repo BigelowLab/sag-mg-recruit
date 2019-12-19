@@ -31,7 +31,8 @@ setup(
         'pandas',
         'pysam',
         'sarge',
-        'matplotlib'],
+        'matplotlib',
+        'biopython'],
     entry_points='''
         [console_scripts]
         sag-mg-recruit=sag_mg_recruit:main
