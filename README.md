@@ -1,10 +1,6 @@
 # sag-mg-recruit
 Read recruitment pipeline for comparison of sag abundance across metagenomes
 
-To install, clone repo from github, move into directory and type:
-
-python setup.py install
-
 ## Dependencies:
 > python 2.7
 
@@ -16,8 +12,41 @@ python setup.py install
 
 > bedtools
 
+To install with conda:
+```
+# create conda virtual env
+conda create --name smr python=2.7
 
-After installation, for instructions on how to run type:
+# activate environment
+source activate smr
+
+# install dependencies using conda
+conda install -c bioconda flash bwa bedtools samtools pysam biopython
+conda install matplotlib pandas numpy
+
+# optional if you plan on using the checkM functionality:
+conda install -c bioconda checkm
+
+# download this repo
+wget https://github.com/BigelowLab/sag-mg-recruit/archive/master.zip
+
+# unarchive repo
+unzip master.zip
+
+# navigate into repo and run install script
+cd sag-mg-recruit-master
+python setup.py install
+
+# to leave sag-mg-recruit environment
+source deactivate smr
+```
+
+Whenever you want to run sag-mg-recruit, activate your environment:
+```
+source activate smr
+```
+
+For instructions on how to run type:
 
 ```
 sag-mg-recruit --help
@@ -106,7 +135,7 @@ That table has one row per mg-sag pair with the following columns:
 
 #### Changing alignment parameters
 
-After you've run sag-mg-recruit, you can re-run the analysis with changed ```--pctid```, ```--overlap```, or ```--minlen``` parameters much more quickly than the original run by using the same input files, the same output directory but changing the ```--pctid```, ```--overlap``` and/or ```--minlen``` parameters. 
+After you've run sag-mg-recruit, you can re-run the analysis with changed ```--pctid```, ```--overlap```, or ```--minlen``` parameters much more quickly than the original run by using the same input files, the same output directory but changing the ```--pctid```, ```--overlap``` and/or ```--minlen``` parameters.
 
 For example, say your first run was:
 
